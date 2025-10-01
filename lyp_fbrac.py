@@ -1,11 +1,12 @@
 import os
 import platform
-
 import json
 import random
 import time
+import pickle
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 import tqdm
 import wandb
@@ -21,12 +22,16 @@ from utils.log_utils import CsvLogger, get_exp_name, get_flag_dict, get_wandb_vi
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string('run_group', 'Debug', 'Run group.')
+flags.DEFINE_string('run_group', 'LyapunovFBRAC', 'Run group.')
 flags.DEFINE_integer('seed', 0, 'Random seed.')
 flags.DEFINE_string('env_name', 'cube-double-play-singletask-v0', 'Environment (dataset) name.')
 flags.DEFINE_string('save_dir', 'exp/', 'Save directory.')
 flags.DEFINE_string('restore_path', None, 'Restore path.')
 flags.DEFINE_integer('restore_epoch', None, 'Restore epoch.')
+
+# Lyapunov function loading
+flags.DEFINE_string('lyapunov_path', None, 'Path to pre-trained Lyapunov function.')
+flags.DEFINE_integer('lyapunov_step', None, 'Step number of the Lyapunov function to load.')
 
 flags.DEFINE_integer('offline_steps', 1000000, 'Number of offline steps.')
 flags.DEFINE_integer('online_steps', 0, 'Number of online steps.')
@@ -44,7 +49,36 @@ flags.DEFINE_float('p_aug', None, 'Probability of applying image augmentation.')
 flags.DEFINE_integer('frame_stack', None, 'Number of frames to stack.')
 flags.DEFINE_integer('balanced_sampling', 0, 'Whether to use balanced sampling for online fine-tuning.')
 
-config_flags.DEFINE_config_file('agent', 'agents/fql.py', lock_config=False)
+config_flags.DEFINE_config_file('agent', 'agents/lyapunov_fbrac.py', lock_config=False)
+
+
+def load_lyapunov_function(lyapunov_path, lyapunov_step, lyapunov_fn):
+    """Load pre-trained Lyapunov function parameters into the network."""
+    if lyapunov_path is None or lyapunov_step is None:
+        raise ValueError("Both lyapunov_path and lyapunov_step must be provided")
+    
+    # Load parameters
+    params_path = os.path.join(lyapunov_path, f'lyapunov_params_step_{lyapunov_step}.npz')
+    tree_path = os.path.join(lyapunov_path, f'lyapunov_tree_step_{lyapunov_step}.pkl')
+    
+    if not os.path.exists(params_path):
+        raise FileNotFoundError(f"Parameters file not found: {params_path}")
+    if not os.path.exists(tree_path):
+        raise FileNotFoundError(f"Tree structure file not found: {tree_path}")
+    
+    # Load tree definition
+    with open(tree_path, 'rb') as f:
+        tree_def = pickle.load(f)
+    
+    # Load flattened parameters
+    params_data = np.load(params_path)
+    flat_params = [params_data[f'arr_{i}'] for i in range(len(params_data.files))]
+    
+    # Reconstruct parameter tree
+    params = jax.tree_util.tree_unflatten(tree_def, flat_params)
+    
+    print(f"Loaded Lyapunov network from {lyapunov_path} at step {lyapunov_step}")
+    return params
 
 
 def main(_):
@@ -52,7 +86,7 @@ def main(_):
     agent_name = FLAGS.agent.agent_name
     env_name = FLAGS.env_name
     exp_name = f"{agent_name}_{env_name}_{get_exp_name(FLAGS.seed)}_utd-ratio{FLAGS.num_updates}"
-    setup_wandb(project='fql', group=FLAGS.run_group, name=exp_name)
+    setup_wandb(project='lyapunov_fbrac', group=FLAGS.run_group, name=exp_name)
 
     FLAGS.save_dir = os.path.join(FLAGS.save_dir, wandb.run.project, FLAGS.run_group, exp_name)
     os.makedirs(FLAGS.save_dir, exist_ok=True)
@@ -102,6 +136,26 @@ def main(_):
         example_batch['actions'],
         config,
     )
+
+    # Load pre-trained Lyapunov function if provided
+    if FLAGS.lyapunov_path is not None:
+        print(f"Loading pre-trained Lyapunov function from {FLAGS.lyapunov_path}")
+        
+        # Get the Lyapunov network from the agent
+        lyapunov_network = agent.network.model_def.modules['lyapunov']
+        
+        # Load the parameters into the network
+        lyapunov_params = load_lyapunov_function(FLAGS.lyapunov_path, FLAGS.lyapunov_step, lyapunov_network)
+        
+        # Create new network parameters with the loaded Lyapunov parameters
+        # Extract the actual parameters from the 'params' wrapper
+        new_params = agent.network.params.copy()
+        new_params['modules_lyapunov'] = lyapunov_params['params']
+        
+        # Create a new agent with the updated parameters
+        agent = agent.replace(network=agent.network.replace(params=new_params))
+        
+        print("Lyapunov function loaded and frozen (weights will not be updated)")
 
     # Restore agent.
     if FLAGS.restore_path is not None:

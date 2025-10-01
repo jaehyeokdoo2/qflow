@@ -11,16 +11,48 @@ from utils.encoders import encoder_modules
 from utils.flax_utils import ModuleDict, TrainState, nonpytree_field
 from utils.networks import ActorVectorField, Value
 
-# Global cache for compiled gradient functions
-_COMPILED_GRAD_FNS = {}
 
-
-class FQLAgent(flax.struct.PyTreeNode):
+class FQLIDMAgent(flax.struct.PyTreeNode):
     """Flow Q-learning (FQL) agent."""
 
     rng: Any
     network: Any
     config: Any = nonpytree_field()
+
+    def critic_loss_idm(self, batch, grad_params, rng):
+        """Compute the FQL critic loss."""
+        rng, sample_rng = jax.random.split(rng)
+
+        curr_observations = batch['observations']
+        next_observations = batch['next_observations']
+        actions = batch['actions']
+
+        q = self.network.select('critic')(curr_observations, actions=actions, params=grad_params)
+
+        # State augmentation with small Gaussian noise
+        augmented_observations = curr_observations + \
+            jax.random.normal(rng, curr_observations.shape) * self.config['aug_std']
+        
+        # IDM action prediction
+        pseudo_actions = self.config['idm_agent'].predict_action(augmented_observations, next_observations)
+
+        # Replace with augmented samples
+        curr_observations = augmented_observations
+        actions = pseudo_actions
+
+        q_augmented = self.network.select('critic')(curr_observations, actions=actions, params=grad_params)
+
+        aug_loss = jnp.square(jax.lax.stop_gradient(q) - q_augmented).mean()
+
+        critic_loss = aug_loss * self.config['aug_loss_weight']
+
+        return critic_loss, {
+            'critic_loss': critic_loss,
+            'q_mean': q.mean(),
+            'q_max': q.max(),
+            'q_min': q.min(),
+        }
+
 
     def critic_loss(self, batch, grad_params, rng):
         """Compute the FQL critic loss."""
@@ -39,49 +71,11 @@ class FQLAgent(flax.struct.PyTreeNode):
         q = self.network.select('critic')(batch['observations'], actions=batch['actions'], params=grad_params)
         critic_loss = jnp.square(q - target_q).mean()
 
-        # Value Jacobian regularization
-        jacobian_reg_loss = 0.0
-        jacobian_reg_coeff = self.config.get('value_jacobian_reg', 0.0)
-        if jacobian_reg_coeff > 0:
-            def q_fn(state):
-                qs = self.network.select('critic')(state[None, :], actions=batch['actions'][:1], params=grad_params)
-                if self.config['q_agg'] == 'min':
-                    return jnp.min(qs)
-                else:
-                    return jnp.mean(qs)
-            
-            jacobians = jax.vmap(jax.grad(q_fn))(batch['observations'])
-            jacobian_reg_loss = jnp.sum(jacobians**2, axis=-1)
-            
-            if self.config.get('weight_value_jacobian_reg', False):
-                # --- Q-value-based Weighting Logic ---
-                # 1. Get the Q-values for each state. Stop gradient to use it only for weighting.
-                q_values = self.network.select('critic')(batch['observations'], actions=batch['actions'])
-                if self.config['q_agg'] == 'min':
-                    q_for_weighting = jnp.min(q_values, axis=0)
-                else:
-                    q_for_weighting = jnp.mean(q_values, axis=0)
-                q_for_weighting = jax.lax.stop_gradient(q_for_weighting)
-
-                # 2. Calculate weights using softmax over negative values.
-                # Lower Q-value -> higher weight. Temperature controls sharpness.
-                weighting_temp = self.config.get('jacobian_weighting_temp', 1.0)
-                weights = jax.nn.softmax(-q_for_weighting / weighting_temp) * batch['observations'].shape[0]
-
-                # 3. Apply weights to the per-state penalty scores
-                jacobian_reg_loss = (weights * jacobian_reg_loss).mean()
-            else:
-                jacobian_reg_loss = jnp.mean(jacobian_reg_loss)
-
-            jacobian_reg_loss = jacobian_reg_coeff * jacobian_reg_loss
-            critic_loss += jacobian_reg_loss
-
         return critic_loss, {
             'critic_loss': critic_loss,
             'q_mean': q.mean(),
             'q_max': q.max(),
             'q_min': q.min(),
-            'value_jacb_reg_loss': jacobian_reg_loss,
         }
 
     def actor_loss(self, batch, grad_params, rng):
@@ -144,11 +138,15 @@ class FQLAgent(flax.struct.PyTreeNode):
         for k, v in critic_info.items():
             info[f'critic/{k}'] = v
 
+        critic_loss_idm, critic_info_idm = self.critic_loss_idm(batch, grad_params, critic_rng)
+        for k, v in critic_info_idm.items():
+            info[f'critic_idm/{k}'] = v
+
         actor_loss, actor_info = self.actor_loss(batch, grad_params, actor_rng)
         for k, v in actor_info.items():
             info[f'actor/{k}'] = v
 
-        loss = critic_loss + actor_loss
+        loss = critic_loss + critic_loss_idm + actor_loss
         return loss, info
 
     def target_update(self, network, module_name):
@@ -170,6 +168,18 @@ class FQLAgent(flax.struct.PyTreeNode):
 
         new_network, info = self.network.apply_loss_fn(loss_fn=loss_fn)
         self.target_update(new_network, 'critic')
+
+        return self.replace(network=new_network, rng=new_rng), info
+    
+    @jax.jit
+    def update_idm(self, batch):
+        """Update with augmented samples."""
+        new_rng, rng = jax.random.split(self.rng)
+
+        def loss_fn_idm(grad_params):
+            return self.critic_loss_idm(batch, grad_params, rng=rng)
+        
+        new_network, info = self.network.apply_loss_fn(loss_fn=loss_fn_idm)
 
         return self.replace(network=new_network, rng=new_rng), info
 
@@ -208,135 +218,6 @@ class FQLAgent(flax.struct.PyTreeNode):
             t = jnp.full((*observations.shape[:-1], 1), i / self.config['flow_steps'])
             vels = self.network.select('actor_bc_flow')(observations, actions, t, is_encoded=True)
             actions = actions + vels / self.config['flow_steps']
-        actions = jnp.clip(actions, -1, 1)
-        return actions
-
-    def _get_energy_grad_fn(self, energy_fn):
-        """
-        Get or create a pre-compiled gradient function for the energy function.
-        This avoids recompiling the gradient computation in every flow step.
-        
-        Args:
-            energy_fn: Energy function that takes (observations, actions) and returns energy values
-            
-        Returns:
-            energy_grad_fn: Pre-compiled gradient function
-        """
-        # Create a unique key for this energy function (using its id)
-        energy_fn_id = id(energy_fn)
-        
-        # Use global module-level cache
-        global _COMPILED_GRAD_FNS
-        
-        if energy_fn_id not in _COMPILED_GRAD_FNS:
-            # Pre-compile the gradient function once with JIT compilation
-            def energy_grad_fn(observations, actions):
-                def energy_sum_fn(actions):
-                    energy_values = energy_fn(observations, actions)
-                    return jnp.sum(energy_values)
-                return jax.grad(energy_sum_fn)(actions)
-            
-            # JIT compile the gradient function for maximum performance
-            _COMPILED_GRAD_FNS[energy_fn_id] = jax.jit(energy_grad_fn)
-        
-        return _COMPILED_GRAD_FNS[energy_fn_id]
-
-    def compute_guidance_gradient(self, observations, actions, energy_fn, guidance_coeff=1.0):
-        """
-        Compute the gradient of the energy function w.r.t. actions for guidance.
-        Now uses pre-compiled gradient function for better performance.
-        
-        Args:
-            observations: Current observations (batch_size, obs_dim)
-            actions: Current actions (batch_size, action_dim)
-            energy_fn: Energy function that takes (observations, actions) and returns energy values
-            guidance_coeff: Guidance strength coefficient
-            
-        Returns:
-            guidance_grad: Gradient of energy function w.r.t. actions (batch_size, action_dim)
-        """
-        # Get the pre-compiled gradient function
-        energy_grad_fn = self._get_energy_grad_fn(energy_fn)
-        
-        # Compute gradient using pre-compiled function
-        guidance_grad = energy_grad_fn(observations, actions)
-        return guidance_coeff * guidance_grad
-
-    def sample_action_with_guidance(
-        self,
-        observations,
-        energy_fn,
-        seed=None,
-        guidance_coeff=1.0,
-        temperature=1.0,
-        partial_guidance=-1,
-    ):
-        """
-        Sample actions from the policy with energy-based guidance.
-        
-        Args:
-            observations: Current observations
-            energy_fn: Energy function that takes (observations, actions) and returns energy values
-            seed: Random seed for sampling
-            guidance_coeff: Guidance strength coefficient
-            temperature: Sampling temperature
-            partial_guidance: If -1, apply guidance for entire sampling process.
-                            If > 0 and < flow_steps, apply guidance only to last {partial_guidance} steps.
-            
-        Returns:
-            actions: Sampled actions with guidance applied
-        """
-        action_seed, noise_seed = jax.random.split(seed)
-        noises = jax.random.normal(
-            action_seed,
-            (
-                *observations.shape[: -len(self.config['ob_dims'])],
-                self.config['action_dim'],
-            ),
-        )
-        
-        # Determine when to apply guidance based on partial_guidance parameter
-        flow_steps = self.config['flow_steps']
-        if partial_guidance == -1:
-            # Apply guidance for entire sampling process
-            guidance_start_step = 0
-        elif 0 < partial_guidance < flow_steps:
-            # Apply guidance only to last {partial_guidance} steps
-            guidance_start_step = flow_steps - partial_guidance
-        else:
-            # Invalid partial_guidance value, default to no guidance
-            guidance_start_step = flow_steps
-            print(f"Warning: Invalid partial_guidance value {partial_guidance}. Using no guidance.")
-        
-        # Pre-compile the gradient function once for better performance (only if we'll use guidance)
-        energy_grad_fn = None
-        if guidance_start_step < flow_steps:
-            try:
-                energy_grad_fn = self._get_energy_grad_fn(energy_fn)
-            except Exception as e:
-                print(f"Error pre-compiling gradient function: {e}")
-                energy_grad_fn = None
-        
-        # Apply one-step flow with guidance (matching normal sample_actions)
-        if self.config['encoder'] is not None:
-            encoded_observations = self.network.select('actor_bc_flow_encoder')(observations)
-        else:
-            encoded_observations = observations
-            
-        # Get the one-step flow action (same as normal sampling)
-        actions = self.network.select('actor_onestep_flow')(encoded_observations, noises, params=self.network.params)
-        
-        # Apply guidance if requested
-        if guidance_coeff != 0.0 and energy_grad_fn is not None:
-            try:
-                guidance_grad = energy_grad_fn(observations, actions)
-                guidance_grad = guidance_coeff * guidance_grad
-                # Add guidance to the actions
-                actions = actions + guidance_grad
-            except Exception as e:
-                print(f"Error computing guidance gradient: {e}")
-                # Continue without guidance if there's an error
-        
         actions = jnp.clip(actions, -1, 1)
         return actions
 
@@ -419,7 +300,9 @@ class FQLAgent(flax.struct.PyTreeNode):
 def get_config():
     config = ml_collections.ConfigDict(
         dict(
-            agent_name='fql',  # Agent name.
+            agent_name='fql_idm_fixed',  # Agent name.
+            idm_agent=None,  # IDM agent (will be loaded automatically)
+            idm_path=None, # Path to the IDM Model.
             ob_dims=ml_collections.config_dict.placeholder(list),  # Observation dimensions (will be set automatically).
             action_dim=ml_collections.config_dict.placeholder(int),  # Action dimension (will be set automatically).
             lr=3e-4,  # Learning rate.
@@ -434,9 +317,9 @@ def get_config():
             alpha=10.0,  # BC coefficient (need to be tuned for each environment).
             flow_steps=10,  # Number of flow steps.
             normalize_q_loss=False,  # Whether to normalize the Q loss.
-            value_jacobian_reg=0.0,  # Value Jacobian regularization coefficient.
-            weight_value_jacobian_reg=False,  # Weight value Jacobian regularization.
-            jacobian_weighting_temp=1.0,  # Temperature for Jacobian weighting.
+            aug_loss_weight=1.0, # Critic loss weight for augmented samples
+            aug_discount=0.9, # Reward discount factor for augmented samples
+            aug_std=0.01, # Standard deviation of the Gaussian noise for state augmentation
             encoder=ml_collections.config_dict.placeholder(str),  # Visual encoder name (None, 'impala_small', etc.).
         )
     )

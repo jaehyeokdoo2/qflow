@@ -1,11 +1,11 @@
 import os
 import platform
-
 import json
 import random
 import time
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 import tqdm
 import wandb
@@ -21,7 +21,7 @@ from utils.log_utils import CsvLogger, get_exp_name, get_flag_dict, get_wandb_vi
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string('run_group', 'Debug', 'Run group.')
+flags.DEFINE_string('run_group', 'LyapunovFBRAC', 'Run group.')
 flags.DEFINE_integer('seed', 0, 'Random seed.')
 flags.DEFINE_string('env_name', 'cube-double-play-singletask-v0', 'Environment (dataset) name.')
 flags.DEFINE_string('save_dir', 'exp/', 'Save directory.')
@@ -44,7 +44,7 @@ flags.DEFINE_float('p_aug', None, 'Probability of applying image augmentation.')
 flags.DEFINE_integer('frame_stack', None, 'Number of frames to stack.')
 flags.DEFINE_integer('balanced_sampling', 0, 'Whether to use balanced sampling for online fine-tuning.')
 
-config_flags.DEFINE_config_file('agent', 'agents/fql.py', lock_config=False)
+config_flags.DEFINE_config_file('agent', 'agents/lyapunov_fbrac.py', lock_config=False)
 
 
 def main(_):
@@ -52,7 +52,7 @@ def main(_):
     agent_name = FLAGS.agent.agent_name
     env_name = FLAGS.env_name
     exp_name = f"{agent_name}_{env_name}_{get_exp_name(FLAGS.seed)}_utd-ratio{FLAGS.num_updates}"
-    setup_wandb(project='fql', group=FLAGS.run_group, name=exp_name)
+    setup_wandb(project='lyapunov_fbrac', group=FLAGS.run_group, name=exp_name)
 
     FLAGS.save_dir = os.path.join(FLAGS.save_dir, wandb.run.project, FLAGS.run_group, exp_name)
     os.makedirs(FLAGS.save_dir, exist_ok=True)

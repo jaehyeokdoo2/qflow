@@ -13,7 +13,7 @@ from utils.flax_utils import ModuleDict, TrainState, nonpytree_field
 from utils.networks import Actor, Value
 
 
-class ReBRACAgent(flax.struct.PyTreeNode):
+class ReBRACIDMAgent(flax.struct.PyTreeNode):
     """Revisited behavior-regularized actor-critic (ReBRAC) agent.
 
     ReBRAC is a variant of TD3+BC with layer normalization and separate actor and critic penalization.
@@ -23,6 +23,52 @@ class ReBRACAgent(flax.struct.PyTreeNode):
     network: Any
     config: Any = nonpytree_field()
 
+    def critic_loss_idm(self, batch, grad_params, rng):
+        """Compute the ReBRAC critic loss."""
+        rng, sample_rng = jax.random.split(rng)
+        curr_observations = batch['observations']
+        next_observations = batch['next_observations']
+        actions = batch['actions']
+        batch_next_actions = batch['next_actions']
+
+        # State augmentation with small Gaussian noise
+        augmented_observations = curr_observations + \
+            jax.random.normal(rng, curr_observations.shape) * 0.01
+        
+        # IDM action prediction
+        pseudo_actions = self.config['idm_agent'].predict_action(augmented_observations, next_observations)
+
+        # Replace with augmented samples
+        curr_observations = augmented_observations
+        actions = pseudo_actions
+
+        next_dist = self.network.select('target_actor')(next_observations)
+        next_actions = next_dist.mode()
+        noise = jnp.clip(
+            (jax.random.normal(sample_rng, next_actions.shape) * self.config['actor_noise']),
+            -self.config['actor_noise_clip'],
+            self.config['actor_noise_clip'],
+        )
+        next_actions = jnp.clip(next_actions + noise, -1, 1)
+
+        next_qs = self.network.select('target_critic')(next_observations, actions=next_actions)
+        next_q = next_qs.min(axis=0)
+
+        mse = jnp.square(next_actions - batch_next_actions).sum(axis=-1)
+        next_q = next_q - self.config['alpha_critic'] * mse
+
+        target_q = batch['rewards'] + self.config['discount'] * batch['masks'] * next_q
+
+        q = self.network.select('critic')(curr_observations, actions=actions, params=grad_params)
+        critic_loss = jnp.square(q - target_q).mean()
+
+        return critic_loss, {
+            'critic_loss': critic_loss,
+            'q_mean': q.mean(),
+            'q_max': q.max(),
+            'q_min': q.min(),
+        }
+    
     def critic_loss(self, batch, grad_params, rng):
         """Compute the ReBRAC critic loss."""
         rng, sample_rng = jax.random.split(rng)
@@ -122,16 +168,30 @@ class ReBRACAgent(flax.struct.PyTreeNode):
     def update(self, batch, full_update=True):
         """Update the agent and return a new agent with information dictionary."""
         new_rng, rng = jax.random.split(self.rng)
-    
+
         def loss_fn(grad_params):
             return self.total_loss(batch, grad_params, full_update, rng=rng)
 
         new_network, info = self.network.apply_loss_fn(loss_fn=loss_fn)
+
+        return self.replace(network=new_network, rng=new_rng), info
+    
+    @partial(jax.jit, static_argnames=('full_update',))
+    def update_idm(self, batch, full_update=True):
+        """Update with augmented samples."""
+        new_rng, rng = jax.random.split(self.rng)
+
+        def loss_fn_idm(grad_params):
+            return self.critic_loss_idm(batch, grad_params, rng=rng)
+        
+        new_network, info = self.network.apply_loss_fn(loss_fn=loss_fn_idm)
+
         if full_update:
             # Update the target networks only when `full_update` is True.
             self.target_update(new_network, 'critic')
             self.target_update(new_network, 'actor')
-
+        
+        
         return self.replace(network=new_network, rng=new_rng), info
 
     @jax.jit
@@ -222,7 +282,9 @@ class ReBRACAgent(flax.struct.PyTreeNode):
 def get_config():
     config = ml_collections.ConfigDict(
         dict(
-            agent_name='rebrac',  # Agent name.
+            agent_name='rebrac_idm',  # Agent name.
+            idm_agent=None, # IDM agent (will be loaded automatically)
+            idm_path=None, # Path to the IDM Model.
             lr=3e-4,  # Learning rate.
             batch_size=256,  # Batch size.
             actor_hidden_dims=(512, 512, 512, 512),  # Actor network hidden dimensions.

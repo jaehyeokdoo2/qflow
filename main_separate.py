@@ -34,7 +34,8 @@ flags.DEFINE_integer('buffer_size', 2000000, 'Replay buffer size.')
 flags.DEFINE_integer('log_interval', 5000, 'Logging interval.')
 flags.DEFINE_integer('eval_interval', 100000, 'Evaluation interval.')
 flags.DEFINE_integer('save_interval', 1000000, 'Saving interval.')
-flags.DEFINE_integer('num_updates', 1, 'Number of updates per step.')
+flags.DEFINE_integer('num_critic_updates', 1, 'Number of critic updates per step.')
+flags.DEFINE_integer('num_actor_updates', 1, 'Number of actor updates per step.')
 
 flags.DEFINE_integer('eval_episodes', 50, 'Number of evaluation episodes.')
 flags.DEFINE_integer('video_episodes', 0, 'Number of video episodes for each task.')
@@ -44,15 +45,17 @@ flags.DEFINE_float('p_aug', None, 'Probability of applying image augmentation.')
 flags.DEFINE_integer('frame_stack', None, 'Number of frames to stack.')
 flags.DEFINE_integer('balanced_sampling', 0, 'Whether to use balanced sampling for online fine-tuning.')
 
-config_flags.DEFINE_config_file('agent', 'agents/fql.py', lock_config=False)
+config_flags.DEFINE_config_file('agent', 'agents/fql_separate.py', lock_config=False)
 
 
 def main(_):
     # Set up logger.
     agent_name = FLAGS.agent.agent_name
+
+    assert agent_name == 'fql_separate', 'Only FQL_separate is supported for now.'
     env_name = FLAGS.env_name
-    exp_name = f"{agent_name}_{env_name}_{get_exp_name(FLAGS.seed)}_utd-ratio{FLAGS.num_updates}"
-    setup_wandb(project='fql', group=FLAGS.run_group, name=exp_name)
+    exp_name = f"{agent_name}_{env_name}_{get_exp_name(FLAGS.seed)}"
+    setup_wandb(project='fql_separate', group=FLAGS.run_group, name=exp_name)
 
     FLAGS.save_dir = os.path.join(FLAGS.save_dir, wandb.run.project, FLAGS.run_group, exp_name)
     os.makedirs(FLAGS.save_dir, exist_ok=True)
@@ -90,8 +93,6 @@ def main(_):
         if dataset is not None:
             dataset.p_aug = FLAGS.p_aug
             dataset.frame_stack = FLAGS.frame_stack
-            if config['agent_name'] == 'rebrac' or config['agent_name'] == 'frebrac':
-                dataset.return_next_actions = True
 
     # Create agent.
     example_batch = train_dataset.sample(1)
@@ -121,12 +122,13 @@ def main(_):
         if i <= FLAGS.offline_steps:
             # Offline RL.
             batch = train_dataset.sample(config['batch_size'])
-
-            for _ in range(FLAGS.num_updates):
-                if config['agent_name'] == 'rebrac' or config['agent_name'] == 'frebrac':
-                    agent, update_info = agent.update(batch, full_update=(i % config['actor_freq'] == 0))
-                else:
-                    agent, update_info = agent.update(batch)
+            update_info = {}
+            for _ in range(FLAGS.num_critic_updates):
+                agent, critic_update_info = agent.update_critic(batch)
+            for _ in range(FLAGS.num_actor_updates):
+                agent, actor_update_info = agent.update_actor(batch)
+            update_info.update(critic_update_info)
+            update_info.update(actor_update_info)
         else:
             # Online fine-tuning.
             online_rng, key = jax.random.split(online_rng)
@@ -173,18 +175,17 @@ def main(_):
             else:
                 batch = replay_buffer.sample(config['batch_size'])
 
-            if config['agent_name'] == 'rebrac' or config['agent_name'] == 'frebrac':
-                agent, update_info = agent.update(batch, full_update=(i % config['actor_freq'] == 0))
-            else:
-                agent, update_info = agent.update(batch)
+            agent, update_info = agent.update(batch)
 
         # Log metrics.
         if i % FLAGS.log_interval == 0:
             train_metrics = {f'training/{k}': v for k, v in update_info.items()}
             if val_dataset is not None:
                 val_batch = val_dataset.sample(config['batch_size'])
-                _, val_info = agent.total_loss(val_batch, grad_params=None)
-                train_metrics.update({f'validation/{k}': v for k, v in val_info.items()})
+                _, critic_val_info = agent.critic_loss(val_batch, grad_params=None, rng=agent.rng)
+                _, actor_val_info = agent.actor_loss(val_batch, grad_params=None, rng=agent.rng)
+                train_metrics.update({f'validation/{k}': v for k, v in critic_val_info.items()})
+                train_metrics.update({f'validation/{k}': v for k, v in actor_val_info.items()})
             train_metrics['time/epoch_time'] = (time.time() - last_time) / FLAGS.log_interval
             train_metrics['time/total_time'] = time.time() - first_time
             train_metrics.update(expl_metrics)

@@ -28,13 +28,16 @@ flags.DEFINE_string('save_dir', 'exp/', 'Save directory.')
 flags.DEFINE_string('restore_path', None, 'Restore path.')
 flags.DEFINE_integer('restore_epoch', None, 'Restore epoch.')
 
+# IDM model path for RL training
+flags.DEFINE_string('idm_path', None, 'Path to the trained IDM model to use during RL training.')
+flags.DEFINE_string('idm_restore_epoch', None, 'Restore epoch for the IDM model.')
+
 flags.DEFINE_integer('offline_steps', 1000000, 'Number of offline steps.')
 flags.DEFINE_integer('online_steps', 0, 'Number of online steps.')
 flags.DEFINE_integer('buffer_size', 2000000, 'Replay buffer size.')
 flags.DEFINE_integer('log_interval', 5000, 'Logging interval.')
 flags.DEFINE_integer('eval_interval', 100000, 'Evaluation interval.')
 flags.DEFINE_integer('save_interval', 1000000, 'Saving interval.')
-flags.DEFINE_integer('num_updates', 1, 'Number of updates per step.')
 
 flags.DEFINE_integer('eval_episodes', 50, 'Number of evaluation episodes.')
 flags.DEFINE_integer('video_episodes', 0, 'Number of video episodes for each task.')
@@ -47,12 +50,53 @@ flags.DEFINE_integer('balanced_sampling', 0, 'Whether to use balanced sampling f
 config_flags.DEFINE_config_file('agent', 'agents/fql.py', lock_config=False)
 
 
+def load_idm_model(idm_path, restore_epoch, env_name, frame_stack=None):
+    """Load the trained IDM model."""
+    if idm_path is None:
+        print("No IDM path provided, skipping IDM loading.")
+        return None
+    
+    print(f"Loading IDM model from: {idm_path}")
+    
+    # Create environment and dataset to get example data
+    _, _, train_dataset, _ = make_env_and_datasets(env_name, frame_stack=frame_stack)
+    train_dataset = Dataset.create(**train_dataset)
+    
+    # Sample example data for IDM creation
+    example_batch = train_dataset.sample(1)
+    
+    # Create IDM agent with default config
+    from agents.idm import IDMAgent, get_config as get_idm_config
+    idm_config = get_idm_config()
+    
+    # Set dataset-specific parameters
+    idm_config['ob_dims'] = example_batch['observations'].shape[1:]
+    idm_config['action_dim'] = example_batch['actions'].shape[-1]
+    
+    # Create IDM agent
+    idm_agent = IDMAgent.create(
+        seed=0,
+        ex_observations=example_batch['observations'],
+        ex_actions=example_batch['actions'],
+        config=idm_config,
+    )
+    
+    # Load trained IDM parameters
+    idm_agent = restore_agent(idm_agent, idm_path, restore_epoch=restore_epoch)
+    print("IDM model loaded successfully!")
+    
+    return idm_agent
+
+
 def main(_):
     # Set up logger.
     agent_name = FLAGS.agent.agent_name
+    if "idm" not in agent_name:
+        raise ValueError("Agent must be IDM compatible.")
+
     env_name = FLAGS.env_name
-    exp_name = f"{agent_name}_{env_name}_{get_exp_name(FLAGS.seed)}_utd-ratio{FLAGS.num_updates}"
-    setup_wandb(project='fql', group=FLAGS.run_group, name=exp_name)
+    exp_name = f"{agent_name}_{env_name}_{get_exp_name(FLAGS.seed)}_aug_loss_weight_{FLAGS.agent.aug_loss_weight}_aug_std_{FLAGS.agent.aug_std}"
+    setup_wandb(project='idm_rl', group=FLAGS.run_group, name=exp_name)
 
     FLAGS.save_dir = os.path.join(FLAGS.save_dir, wandb.run.project, FLAGS.run_group, exp_name)
     os.makedirs(FLAGS.save_dir, exist_ok=True)
@@ -62,12 +106,19 @@ def main(_):
 
     # Make environment and datasets.
     config = FLAGS.agent
-    print(config)
     env, eval_env, train_dataset, val_dataset = make_env_and_datasets(FLAGS.env_name, frame_stack=FLAGS.frame_stack)
     if FLAGS.video_episodes > 0:
         assert 'singletask' in FLAGS.env_name, 'Rendering is currently only supported for OGBench environments.'
     if FLAGS.online_steps > 0:
         assert 'visual' not in FLAGS.env_name, 'Online fine-tuning is currently not supported for visual environments.'
+
+    # Load IDM model if path is provided
+    idm_agent = load_idm_model(FLAGS.idm_path, FLAGS.idm_restore_epoch, FLAGS.env_name, FLAGS.frame_stack)
+    
+    # Store IDM agent in config for use during training
+    if idm_agent is not None:
+        config['idm_agent'] = idm_agent
+        print("IDM agent added to config for RL training.")
 
     # Initialize agent.
     random.seed(FLAGS.seed)
@@ -90,7 +141,7 @@ def main(_):
         if dataset is not None:
             dataset.p_aug = FLAGS.p_aug
             dataset.frame_stack = FLAGS.frame_stack
-            if config['agent_name'] == 'rebrac' or config['agent_name'] == 'frebrac':
+            if config['agent_name'] == 'rebrac' or config['agent_name'] == 'frebrac' or config['agent_name'] == 'rebrac_idm':
                 dataset.return_next_actions = True
 
     # Create agent.
@@ -122,11 +173,12 @@ def main(_):
             # Offline RL.
             batch = train_dataset.sample(config['batch_size'])
 
-            for _ in range(FLAGS.num_updates):
-                if config['agent_name'] == 'rebrac' or config['agent_name'] == 'frebrac':
-                    agent, update_info = agent.update(batch, full_update=(i % config['actor_freq'] == 0))
-                else:
-                    agent, update_info = agent.update(batch)
+            if config['agent_name'] == 'rebrac' or config['agent_name'] == 'frebrac' or config['agent_name'] == 'rebrac_idm':
+                # agent, update_info_idm = agent.update_idm(batch, full_update=(i % config['actor_freq'] == 0))
+                agent, update_info = agent.update(batch, full_update=(i % config['actor_freq'] == 0))
+            else:
+                # agent, update_info_idm = agent.update_idm(batch)
+                agent, update_info = agent.update(batch)
         else:
             # Online fine-tuning.
             online_rng, key = jax.random.split(online_rng)
@@ -173,14 +225,17 @@ def main(_):
             else:
                 batch = replay_buffer.sample(config['batch_size'])
 
-            if config['agent_name'] == 'rebrac' or config['agent_name'] == 'frebrac':
+            if config['agent_name'] == 'rebrac' or config['agent_name'] == 'frebrac' or config['agent_name'] == 'rebrac_idm':
+                # agent, update_info_idm = agent.update_idm(batch, full_update=(i % config['actor_freq'] == 0))
                 agent, update_info = agent.update(batch, full_update=(i % config['actor_freq'] == 0))
             else:
+                # agent, update_info_idm = agent.update_idm(batch)
                 agent, update_info = agent.update(batch)
 
         # Log metrics.
         if i % FLAGS.log_interval == 0:
             train_metrics = {f'training/{k}': v for k, v in update_info.items()}
+            # train_metrics.update({f'training_idm/{k}': v for k, v in update_info_idm.items()})
             if val_dataset is not None:
                 val_batch = val_dataset.sample(config['batch_size'])
                 _, val_info = agent.total_loss(val_batch, grad_params=None)

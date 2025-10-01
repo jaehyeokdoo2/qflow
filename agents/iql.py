@@ -47,15 +47,103 @@ class IQLAgent(flax.struct.PyTreeNode):
         q1, q2 = self.network.select('critic')(batch['observations'], actions=batch['actions'], params=grad_params)
         critic_loss = ((q1 - q) ** 2 + (q2 - q) ** 2).mean()
 
+        # Value Jacobian regularization
+        jacobian_reg_loss = 0.0
+        jacobian_reg_coeff = self.config.get('value_jacobian_reg', 0.0)
+        if jacobian_reg_coeff > 0:
+            def q_fn(state):
+                q1, q2 = self.network.select('critic')(state[None, :], actions=batch['actions'][:1], params=grad_params)
+                return jnp.mean(jnp.minimum(q1, q2))  # Use min like IQL does
+            
+            jacobians = jax.vmap(jax.grad(q_fn))(batch['observations'])
+            jacobian_reg_loss = jnp.sum(jacobians**2, axis=-1)
+            
+            if self.config['weight_value_jacobian_reg']:
+                # --- Value-based Weighting Logic ---
+                # 1. Get the value for each state. Stop gradient to use it only for weighting.
+                v = self.network.select('value')(batch['observations'])
+                v = jax.lax.stop_gradient(v)
+
+                # 2. Calculate weights using softmax over negative values.
+                # Lower value -> higher weight. Temperature controls sharpness.
+                weighting_temp = self.config.get('jacobian_weighting_temp', 1.0)
+                weights = jax.nn.softmax(-v / weighting_temp) * batch['observations'].shape[0] # Multiply by N for mean-like scale
+
+                # 3. Apply weights to the per-state penalty scores
+                jacobian_reg_loss = (weights * jacobian_reg_loss).mean()
+            else:
+                jacobian_reg_loss = jnp.mean(jacobian_reg_loss)
+
+            jacobian_reg_loss = jacobian_reg_coeff * jacobian_reg_loss
+            critic_loss += jacobian_reg_loss
+
         return critic_loss, {
             'critic_loss': critic_loss,
             'q_mean': q.mean(),
             'q_max': q.max(),
             'q_min': q.min(),
+            'value_jacb_reg_loss': jacobian_reg_loss,
         }
 
     def actor_loss(self, batch, grad_params, rng=None):
         """Compute the actor loss (AWR or DDPG+BC)."""
+        # Add weight decay for actor parameters
+        # Use current network params if grad_params is None (e.g., during validation)
+        params_to_use = grad_params if grad_params is not None else self.network.params
+        actor_params = params_to_use['modules_actor']
+        weight_decay = self.config.get('actor_weight_decay', 0.0)
+
+        # --- Hessian Regularization (Computationally Expensive) ---
+        hessian_reg_coeff = self.config.get('actor_hessian_reg', 0.0)
+        hessian_reg_loss = 0.0
+        if hessian_reg_coeff > 0:
+            def scalar_policy_output(state):
+                dist = self.network.select('actor')(state[None, :], params=grad_params)
+                return jnp.sum(dist.mode()[0]) # Hessian requires a scalar output
+
+            hessians = jax.vmap(jax.hessian(scalar_policy_output))(batch['observations'])
+            # hessians shape: (batch_size, state_dim, state_dim)
+            hessian_reg_loss = hessian_reg_coeff * jnp.mean(jnp.sum(hessians**2, axis=(-2, -1)))
+
+         # --- Jacobian Regularization ---
+        jacobian_reg_coeff = self.config.get('actor_jacobian_reg', 0.0)
+        jacobian_reg_loss = 0.0
+        if jacobian_reg_coeff > 0:
+            def policy_fn(state):
+                # Helper function for a single state -> deterministic action mapping
+                dist = self.network.select('actor')(state[None, :], params=grad_params)
+                return dist.mode()[0]  # Get deterministic action, remove batch dim
+
+            # Compute Jacobians for the entire batch using vmap
+            jacobians = jax.vmap(jax.jacobian(policy_fn))(batch['observations'])
+            # jacobians shape: (batch_size, action_dim, state_dim)
+
+            # Calculate the squared Frobenius norm for each Jacobian and average over the batch
+            jacobian_reg_loss = jnp.sum(jacobians**2, axis=(-2, -1))
+            
+            if self.config['weight_jacobian_reg']:
+                # --- New Q-Value Weighting Logic ---
+                # 1. Get the value (as a proxy for Q) for each state. Stop gradient to use it only for weighting.
+                v = self.network.select('value')(batch['observations'])
+                v = jax.lax.stop_gradient(v)
+
+                # 2. Calculate weights using softmax over negative values.
+                # Lower value -> higher weight. Temperature controls sharpness.
+                weighting_temp = self.config.get('jacobian_weighting_temp', 1.0)
+                weights = jax.nn.softmax(-v / weighting_temp) * batch['observations'].shape[0] # Multiply by N for mean-like scale
+
+                # 3. Apply weights to the per-state penalty scores
+                jacobian_reg_loss = (weights * jacobian_reg_loss).mean()
+            else:
+                jacobian_reg_loss = jnp.mean(jacobian_reg_loss)
+
+            jacobian_reg_loss = jacobian_reg_coeff * jacobian_reg_loss
+        
+        # --- L2 regularization ---
+        l2_reg = 0.0
+        if weight_decay > 0:
+            l2_reg = weight_decay * sum(jnp.sum(p**2) for p in jax.tree_util.tree_leaves(actor_params))
+        
         if self.config['actor_loss'] == 'awr':
             # AWR loss.
             v = self.network.select('value')(batch['observations'])
@@ -70,6 +158,9 @@ class IQLAgent(flax.struct.PyTreeNode):
             log_prob = dist.log_prob(batch['actions'])
 
             actor_loss = -(exp_a * log_prob).mean()
+            
+            # Add weight decay to loss
+            actor_loss = actor_loss + l2_reg
 
             actor_info = {
                 'actor_loss': actor_loss,
@@ -77,6 +168,8 @@ class IQLAgent(flax.struct.PyTreeNode):
                 'bc_log_prob': log_prob.mean(),
                 'mse': jnp.mean((dist.mode() - batch['actions']) ** 2),
                 'std': jnp.mean(dist.scale_diag),
+                'l2_reg': l2_reg,
+                'jacb_reg_loss': jacobian_reg_loss,
             }
 
             return actor_loss, actor_info
@@ -90,13 +183,24 @@ class IQLAgent(flax.struct.PyTreeNode):
             q1, q2 = self.network.select('critic')(batch['observations'], actions=q_actions)
             q = jnp.minimum(q1, q2)
 
-            # Normalize Q values by the absolute mean to make the loss scale invariant.
-            q_loss = -q.mean() / jax.lax.stop_gradient(jnp.abs(q).mean())
-            log_prob = dist.log_prob(batch['actions'])
+            # Normalize Q loss by the absolute mean to make the loss scale invariant.
+            if self.config['normalize_q_loss']:
+                q_loss = -q.mean() / jax.lax.stop_gradient(jnp.abs(q).mean())
+            else:
+                q_loss = -q.mean()
 
-            bc_loss = -(self.config['alpha'] * log_prob).mean()
+            if self.config['use_mse']:
+                mse = jnp.square(dist.mode() - batch['actions']).sum(axis=-1)
+                bc_loss = (self.config['alpha'] * mse).mean()
+            else:
+                log_prob = dist.log_prob(batch['actions'])
+
+                bc_loss = -(self.config['alpha'] * log_prob).mean()
 
             actor_loss = q_loss + bc_loss
+            
+            # Add weight decay to loss
+            actor_loss = actor_loss + l2_reg + jacobian_reg_loss + hessian_reg_loss
 
             return actor_loss, {
                 'actor_loss': actor_loss,
@@ -104,9 +208,11 @@ class IQLAgent(flax.struct.PyTreeNode):
                 'bc_loss': bc_loss,
                 'q_mean': q.mean(),
                 'q_abs_mean': jnp.abs(q).mean(),
-                'bc_log_prob': log_prob.mean(),
                 'mse': jnp.mean((dist.mode() - batch['actions']) ** 2),
                 'std': jnp.mean(dist.scale_diag),
+                'l2_reg': l2_reg,
+                'jacb_reg_loss': jacobian_reg_loss,
+                'hessian_reg_loss': hessian_reg_loss,
             }
         else:
             raise ValueError(f'Unsupported actor loss: {self.config["actor_loss"]}')
@@ -256,6 +362,15 @@ def get_config():
             alpha=10.0,  # Temperature in AWR or BC coefficient in DDPG+BC.
             const_std=True,  # Whether to use constant standard deviation for the actor.
             encoder=ml_collections.config_dict.placeholder(str),  # Visual encoder name (None, 'impala_small', etc.).
+            use_mse=False,  # Whether to use MSE loss for the BC term.
+            normalize_q_loss=False,  # Whether to normalize the Q loss.
+            actor_weight_decay=1e-4,  # Weight decay coefficient for actor network.
+            actor_jacobian_reg=0.0,  # Jacobian regularization coefficient.
+            actor_hessian_reg=0.0,  # Hessian regularization coefficient.
+            weight_jacobian_reg=False,  # Weight Jacobian regularization.
+            jacobian_weighting_temp=1.0,  # Temperature for Jacobian weighting.
+            value_jacobian_reg=0.0, # Value Jacobian regularization coefficient.
+            weight_value_jacobian_reg=False, # Weight value Jacobian regularization.
         )
     )
     return config

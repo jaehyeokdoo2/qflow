@@ -6,3 +6,7 @@ dist/
 .DS_Store
 .idea/
 .ruff_cache/
+test/
+guidance_eval_results/
+exp/
+plots/

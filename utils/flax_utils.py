@@ -178,13 +178,14 @@ def save_agent(agent, save_dir, epoch):
     print(f'Saved to {save_path}')
 
 
-def restore_agent(agent, restore_path, restore_epoch):
+def restore_agent(agent, restore_path, restore_epoch, exclude_modules=None):
     """Restore the agent from a file.
 
     Args:
         agent: Agent.
         restore_path: Path to the directory containing the saved agent.
         restore_epoch: Epoch number.
+        exclude_modules: List of module names to exclude from loading (e.g., ['modules_lyapunov']).
     """
     candidates = glob.glob(restore_path)
 
@@ -194,6 +195,35 @@ def restore_agent(agent, restore_path, restore_epoch):
 
     with open(restore_path, 'rb') as f:
         load_dict = pickle.load(f)
+
+    # Create a filtered target agent that only includes modules present in the saved model
+    if exclude_modules is not None:
+        agent_state_dict = load_dict['agent']
+        if 'network' in agent_state_dict and 'params' in agent_state_dict['network']:
+            saved_params = agent_state_dict['network']['params']
+            current_params = agent.network.params
+            
+            # Create a new params dict that only includes modules present in both
+            filtered_params = {}
+            for module_name, module_params in current_params.items():
+                if module_name not in exclude_modules and module_name in saved_params:
+                    filtered_params[module_name] = module_params
+                elif module_name in exclude_modules:
+                    print(f"Excluding module '{module_name}' from target agent")
+            
+            # Create a new network with filtered parameters and fresh optimizer state
+            # This avoids optimizer state mismatches
+            filtered_network_def = agent.network.model_def
+            filtered_network_tx = agent.network.tx
+            
+            # Create new TrainState with filtered params and fresh opt_state
+            filtered_network = TrainState.create(
+                model_def=filtered_network_def,
+                params=filtered_params,
+                tx=filtered_network_tx
+            )
+            
+            agent = agent.replace(network=filtered_network)
 
     agent = flax.serialization.from_state_dict(agent, load_dict['agent'])
 

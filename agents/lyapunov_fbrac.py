@@ -9,18 +9,16 @@ import optax
 
 from utils.encoders import encoder_modules
 from utils.flax_utils import ModuleDict, TrainState, nonpytree_field
-from utils.networks import ActorVectorField, Value
-
-# Global cache for compiled gradient functions
-_COMPILED_GRAD_FNS = {}
+from utils.networks import ActorVectorField, Value, LatentLyapunovFunction
 
 
-class FQLAgent(flax.struct.PyTreeNode):
-    """Flow Q-learning (FQL) agent."""
+class LyapunovFBRACAgent(flax.struct.PyTreeNode):
+    """Flow Q-learning agent with Lyapunov function learning (simultaneous learning)."""
 
     rng: Any
     network: Any
     config: Any = nonpytree_field()
+
 
     def critic_loss(self, batch, grad_params, rng):
         """Compute the FQL critic loss."""
@@ -34,7 +32,7 @@ class FQLAgent(flax.struct.PyTreeNode):
         else:
             next_q = next_qs.mean(axis=0)
 
-        target_q = batch['rewards'] + self.config['discount'] * batch['masks'] * next_q
+        target_q = self.config['reward_scale'] * batch['rewards'] + self.config['discount'] * batch['masks'] * next_q
 
         q = self.network.select('critic')(batch['observations'], actions=batch['actions'], params=grad_params)
         critic_loss = jnp.square(q - target_q).mean()
@@ -43,19 +41,18 @@ class FQLAgent(flax.struct.PyTreeNode):
         jacobian_reg_loss = 0.0
         jacobian_reg_coeff = self.config.get('value_jacobian_reg', 0.0)
         if jacobian_reg_coeff > 0:
-            def q_fn(state):
-                qs = self.network.select('critic')(state[None, :], actions=batch['actions'][:1], params=grad_params)
+            def q_fn(action):
+                qs = self.network.select('critic')(batch['observations'][:1], actions=action[None, :], params=grad_params)
                 if self.config['q_agg'] == 'min':
                     return jnp.min(qs)
                 else:
                     return jnp.mean(qs)
             
-            jacobians = jax.vmap(jax.grad(q_fn))(batch['observations'])
+            jacobians = jax.vmap(jax.grad(q_fn))(batch['actions'])
             jacobian_reg_loss = jnp.sum(jacobians**2, axis=-1)
             
             if self.config.get('weight_value_jacobian_reg', False):
-                # --- Q-value-based Weighting Logic ---
-                # 1. Get the Q-values for each state. Stop gradient to use it only for weighting.
+                # Q-value-based Weighting Logic
                 q_values = self.network.select('critic')(batch['observations'], actions=batch['actions'])
                 if self.config['q_agg'] == 'min':
                     q_for_weighting = jnp.min(q_values, axis=0)
@@ -63,12 +60,9 @@ class FQLAgent(flax.struct.PyTreeNode):
                     q_for_weighting = jnp.mean(q_values, axis=0)
                 q_for_weighting = jax.lax.stop_gradient(q_for_weighting)
 
-                # 2. Calculate weights using softmax over negative values.
-                # Lower Q-value -> higher weight. Temperature controls sharpness.
                 weighting_temp = self.config.get('jacobian_weighting_temp', 1.0)
                 weights = jax.nn.softmax(-q_for_weighting / weighting_temp) * batch['observations'].shape[0]
 
-                # 3. Apply weights to the per-state penalty scores
                 jacobian_reg_loss = (weights * jacobian_reg_loss).mean()
             else:
                 jacobian_reg_loss = jnp.mean(jacobian_reg_loss)
@@ -85,28 +79,45 @@ class FQLAgent(flax.struct.PyTreeNode):
         }
 
     def actor_loss(self, batch, grad_params, rng):
-        """Compute the FQL actor loss."""
+        """Compute the FQL actor loss (simplified version without EWR)."""
         batch_size, action_dim = batch['actions'].shape
         rng, x_rng, t_rng = jax.random.split(rng, 3)
 
-        # BC flow loss.
+        # Add weight decay for actor parameters
+        params_to_use = grad_params if grad_params is not None else self.network.params
+        actor_params = params_to_use['modules_actor_bc_flow']
+        weight_decay = self.config.get('actor_weight_decay', 0.0)
+
+        # L2 regularization on actor parameters
+        l2_reg = 0.0
+        if weight_decay > 0:
+            l2_reg = weight_decay * sum(jnp.sum(p**2) for p in jax.tree_util.tree_leaves(actor_params))
+
+        if self.config['encoder'] is not None:
+            observations = self.network.select('actor_bc_flow_encoder')(batch['observations'])
+        else:
+            observations = batch['observations']
+
+        # BC flow loss
         x_0 = jax.random.normal(x_rng, (batch_size, action_dim))
         x_1 = batch['actions']
         t = jax.random.uniform(t_rng, (batch_size, 1))
         x_t = (1 - t) * x_0 + t * x_1
         vel = x_1 - x_0
 
-        pred = self.network.select('actor_bc_flow')(batch['observations'], x_t, t, params=grad_params)
+        pred = self.network.select('actor_bc_flow')(observations, x_t, t, is_encoded=True, params=grad_params)
         bc_flow_loss = jnp.mean((pred - vel) ** 2)
 
-        # Distillation loss.
+        # Q loss
         rng, noise_rng = jax.random.split(rng)
         noises = jax.random.normal(noise_rng, (batch_size, action_dim))
-        target_flow_actions = self.compute_flow_actions(batch['observations'], noises=noises)
-        actor_actions = self.network.select('actor_onestep_flow')(batch['observations'], noises, params=grad_params)
-        distill_loss = jnp.mean((actor_actions - target_flow_actions) ** 2)
-
-        # Q loss.
+        actor_actions = noises
+        
+        # action sampling over flow steps
+        for i in range(self.config['flow_steps']):
+            t = jnp.full((*observations.shape[:-1], 1), i / self.config['flow_steps'])
+            vels = self.network.select('actor_bc_flow')(observations, actor_actions, t, is_encoded=True, params=grad_params)
+            actor_actions = actor_actions + vels / self.config['flow_steps']
         actor_actions = jnp.clip(actor_actions, -1, 1)
         qs = self.network.select('critic')(batch['observations'], actions=actor_actions)
         q = jnp.mean(qs, axis=0)
@@ -116,30 +127,40 @@ class FQLAgent(flax.struct.PyTreeNode):
             lam = jax.lax.stop_gradient(1 / jnp.abs(q).mean())
             q_loss = lam * q_loss
 
-        # Total loss.
-        actor_loss = bc_flow_loss + self.config['alpha'] * distill_loss + q_loss
+        # Lyapunov safety term for actor - use pre-trained Lyapunov function for safety guidance
+        # Note: Expert actions get HIGHER V(s,a) values, so we want actor to maximize V(s,a) for safety
+        # We minimize -V(s,a) to maximize V(s,a)
+        # import pdb; pdb.set_trace()
+        # Use the Lyapunov network with the loaded parameters
+        lyapunov_values = self.network.select('lyapunov')(batch['observations'], actor_actions, params=grad_params)
+        lyapunov_safety_loss = -jnp.mean(lyapunov_values)  # Minimize -V(s,a) to maximize V(s,a)
+        
+        # Apply Lyapunov regularization coefficient
+        lyapunov_reg_coeff = self.config.get('lyapunov_reg', 0.0)
+        lyapunov_actor_loss = lyapunov_reg_coeff * lyapunov_safety_loss
 
-        # Additional metrics for logging.
-        actions = self.sample_actions(batch['observations'], seed=rng)
-        mse = jnp.mean((actions - batch['actions']) ** 2)
+        # Total loss
+        actor_loss = self.config['alpha'] * bc_flow_loss + q_loss + l2_reg + lyapunov_actor_loss
 
         return actor_loss, {
             'actor_loss': actor_loss,
             'bc_flow_loss': bc_flow_loss,
-            'distill_loss': distill_loss,
             'q_loss': q_loss,
             'q': q.mean(),
-            'mse': mse,
+            'l2_reg': l2_reg,
+            'lyapunov_actor_loss': lyapunov_actor_loss,
+            'lyapunov_safety_loss': lyapunov_safety_loss,
         }
 
     @jax.jit
     def total_loss(self, batch, grad_params, rng=None):
-        """Compute the total loss."""
+        """Compute the total loss including Lyapunov loss."""
         info = {}
         rng = rng if rng is not None else self.rng
 
         rng, actor_rng, critic_rng = jax.random.split(rng, 3)
 
+        # Standard FBRAC losses
         critic_loss, critic_info = self.critic_loss(batch, grad_params, critic_rng)
         for k, v in critic_info.items():
             info[f'critic/{k}'] = v
@@ -148,8 +169,11 @@ class FQLAgent(flax.struct.PyTreeNode):
         for k, v in actor_info.items():
             info[f'actor/{k}'] = v
 
-        loss = critic_loss + actor_loss
-        return loss, info
+        total_loss = critic_loss + actor_loss
+        
+        info['total_loss'] = total_loss
+        
+        return total_loss, info
 
     def target_update(self, network, module_name):
         """Update the target network."""
@@ -168,7 +192,15 @@ class FQLAgent(flax.struct.PyTreeNode):
         def loss_fn(grad_params):
             return self.total_loss(batch, grad_params, rng=rng)
 
-        new_network, info = self.network.apply_loss_fn(loss_fn=loss_fn)
+        # Compute gradients but exclude Lyapunov network
+        grads, info = jax.grad(loss_fn, has_aux=True)(self.network.params)
+        
+        # Zero out gradients for Lyapunov network to keep it frozen
+        if 'modules_lyapunov' in grads:
+            grads['modules_lyapunov'] = jax.tree_util.tree_map(jnp.zeros_like, grads['modules_lyapunov'])
+        
+        # Apply gradients manually
+        new_network = self.network.apply_gradients(grads=grads)
         self.target_update(new_network, 'critic')
 
         return self.replace(network=new_network, rng=new_rng), info
@@ -189,156 +221,18 @@ class FQLAgent(flax.struct.PyTreeNode):
                 self.config['action_dim'],
             ),
         )
-        actions = self.network.select('actor_onestep_flow')(observations, noises)
-        actions = jnp.clip(actions, -1, 1)
-        return actions
-
-    @jax.jit
-    def compute_flow_actions(
-        self,
-        observations,
-        noises,
-    ):
-        """Compute actions from the BC flow model using the Euler method."""
-        if self.config['encoder'] is not None:
-            observations = self.network.select('actor_bc_flow_encoder')(observations)
         actions = noises
-        # Euler method.
         for i in range(self.config['flow_steps']):
             t = jnp.full((*observations.shape[:-1], 1), i / self.config['flow_steps'])
-            vels = self.network.select('actor_bc_flow')(observations, actions, t, is_encoded=True)
+            vels = self.network.select('actor_bc_flow')(observations, actions, t)
             actions = actions + vels / self.config['flow_steps']
         actions = jnp.clip(actions, -1, 1)
+
         return actions
 
-    def _get_energy_grad_fn(self, energy_fn):
-        """
-        Get or create a pre-compiled gradient function for the energy function.
-        This avoids recompiling the gradient computation in every flow step.
-        
-        Args:
-            energy_fn: Energy function that takes (observations, actions) and returns energy values
-            
-        Returns:
-            energy_grad_fn: Pre-compiled gradient function
-        """
-        # Create a unique key for this energy function (using its id)
-        energy_fn_id = id(energy_fn)
-        
-        # Use global module-level cache
-        global _COMPILED_GRAD_FNS
-        
-        if energy_fn_id not in _COMPILED_GRAD_FNS:
-            # Pre-compile the gradient function once with JIT compilation
-            def energy_grad_fn(observations, actions):
-                def energy_sum_fn(actions):
-                    energy_values = energy_fn(observations, actions)
-                    return jnp.sum(energy_values)
-                return jax.grad(energy_sum_fn)(actions)
-            
-            # JIT compile the gradient function for maximum performance
-            _COMPILED_GRAD_FNS[energy_fn_id] = jax.jit(energy_grad_fn)
-        
-        return _COMPILED_GRAD_FNS[energy_fn_id]
-
-    def compute_guidance_gradient(self, observations, actions, energy_fn, guidance_coeff=1.0):
-        """
-        Compute the gradient of the energy function w.r.t. actions for guidance.
-        Now uses pre-compiled gradient function for better performance.
-        
-        Args:
-            observations: Current observations (batch_size, obs_dim)
-            actions: Current actions (batch_size, action_dim)
-            energy_fn: Energy function that takes (observations, actions) and returns energy values
-            guidance_coeff: Guidance strength coefficient
-            
-        Returns:
-            guidance_grad: Gradient of energy function w.r.t. actions (batch_size, action_dim)
-        """
-        # Get the pre-compiled gradient function
-        energy_grad_fn = self._get_energy_grad_fn(energy_fn)
-        
-        # Compute gradient using pre-compiled function
-        guidance_grad = energy_grad_fn(observations, actions)
-        return guidance_coeff * guidance_grad
-
-    def sample_action_with_guidance(
-        self,
-        observations,
-        energy_fn,
-        seed=None,
-        guidance_coeff=1.0,
-        temperature=1.0,
-        partial_guidance=-1,
-    ):
-        """
-        Sample actions from the policy with energy-based guidance.
-        
-        Args:
-            observations: Current observations
-            energy_fn: Energy function that takes (observations, actions) and returns energy values
-            seed: Random seed for sampling
-            guidance_coeff: Guidance strength coefficient
-            temperature: Sampling temperature
-            partial_guidance: If -1, apply guidance for entire sampling process.
-                            If > 0 and < flow_steps, apply guidance only to last {partial_guidance} steps.
-            
-        Returns:
-            actions: Sampled actions with guidance applied
-        """
-        action_seed, noise_seed = jax.random.split(seed)
-        noises = jax.random.normal(
-            action_seed,
-            (
-                *observations.shape[: -len(self.config['ob_dims'])],
-                self.config['action_dim'],
-            ),
-        )
-        
-        # Determine when to apply guidance based on partial_guidance parameter
-        flow_steps = self.config['flow_steps']
-        if partial_guidance == -1:
-            # Apply guidance for entire sampling process
-            guidance_start_step = 0
-        elif 0 < partial_guidance < flow_steps:
-            # Apply guidance only to last {partial_guidance} steps
-            guidance_start_step = flow_steps - partial_guidance
-        else:
-            # Invalid partial_guidance value, default to no guidance
-            guidance_start_step = flow_steps
-            print(f"Warning: Invalid partial_guidance value {partial_guidance}. Using no guidance.")
-        
-        # Pre-compile the gradient function once for better performance (only if we'll use guidance)
-        energy_grad_fn = None
-        if guidance_start_step < flow_steps:
-            try:
-                energy_grad_fn = self._get_energy_grad_fn(energy_fn)
-            except Exception as e:
-                print(f"Error pre-compiling gradient function: {e}")
-                energy_grad_fn = None
-        
-        # Apply one-step flow with guidance (matching normal sample_actions)
-        if self.config['encoder'] is not None:
-            encoded_observations = self.network.select('actor_bc_flow_encoder')(observations)
-        else:
-            encoded_observations = observations
-            
-        # Get the one-step flow action (same as normal sampling)
-        actions = self.network.select('actor_onestep_flow')(encoded_observations, noises, params=self.network.params)
-        
-        # Apply guidance if requested
-        if guidance_coeff != 0.0 and energy_grad_fn is not None:
-            try:
-                guidance_grad = energy_grad_fn(observations, actions)
-                guidance_grad = guidance_coeff * guidance_grad
-                # Add guidance to the actions
-                actions = actions + guidance_grad
-            except Exception as e:
-                print(f"Error computing guidance gradient: {e}")
-                # Continue without guidance if there's an error
-        
-        actions = jnp.clip(actions, -1, 1)
-        return actions
+    def get_lyapunov_value(self, observations, actions):
+        """Get the actual Lyapunov value: -V(s,a) (negated for proper interpretation)."""
+        return -self.network.select('lyapunov')(observations, actions)
 
     @classmethod
     def create(
@@ -369,7 +263,6 @@ class FQLAgent(flax.struct.PyTreeNode):
             encoder_module = encoder_modules[config['encoder']]
             encoders['critic'] = encoder_module()
             encoders['actor_bc_flow'] = encoder_module()
-            encoders['actor_onestep_flow'] = encoder_module()
 
         # Define networks.
         critic_def = Value(
@@ -384,18 +277,21 @@ class FQLAgent(flax.struct.PyTreeNode):
             layer_norm=config['actor_layer_norm'],
             encoder=encoders.get('actor_bc_flow'),
         )
-        actor_onestep_flow_def = ActorVectorField(
-            hidden_dims=config['actor_hidden_dims'],
+        
+        # Define Lyapunov network
+        lyapunov_def = LatentLyapunovFunction(
+            state_dim=ob_dims[0] if len(ob_dims) == 1 else ob_dims[-1],
             action_dim=action_dim,
-            layer_norm=config['actor_layer_norm'],
-            encoder=encoders.get('actor_onestep_flow'),
+            latent_dim=config.get('lyapunov_latent_dim', 16),
+            hidden_dim=config.get('lyapunov_hidden_dims', (64, 64)),
+            layer_norm=config.get('lyapunov_layer_norm', False)
         )
 
         network_info = dict(
             critic=(critic_def, (ex_observations, ex_actions)),
             target_critic=(copy.deepcopy(critic_def), (ex_observations, ex_actions)),
             actor_bc_flow=(actor_bc_flow_def, (ex_observations, ex_actions, ex_times)),
-            actor_onestep_flow=(actor_onestep_flow_def, (ex_observations, ex_actions)),
+            lyapunov=(lyapunov_def, (ex_observations, ex_actions)),
         )
         if encoders.get('actor_bc_flow') is not None:
             # Add actor_bc_flow_encoder to ModuleDict to make it separately callable.
@@ -419,7 +315,7 @@ class FQLAgent(flax.struct.PyTreeNode):
 def get_config():
     config = ml_collections.ConfigDict(
         dict(
-            agent_name='fql',  # Agent name.
+            agent_name='lyapunov_fbrac',  # Agent name.
             ob_dims=ml_collections.config_dict.placeholder(list),  # Observation dimensions (will be set automatically).
             action_dim=ml_collections.config_dict.placeholder(int),  # Action dimension (will be set automatically).
             lr=3e-4,  # Learning rate.
@@ -434,10 +330,20 @@ def get_config():
             alpha=10.0,  # BC coefficient (need to be tuned for each environment).
             flow_steps=10,  # Number of flow steps.
             normalize_q_loss=False,  # Whether to normalize the Q loss.
+            reward_scale=1.0,  # Reward scale.
+            actor_weight_decay=1e-4,  # Weight decay coefficient for actor network.
             value_jacobian_reg=0.0,  # Value Jacobian regularization coefficient.
             weight_value_jacobian_reg=False,  # Weight value Jacobian regularization.
             jacobian_weighting_temp=1.0,  # Temperature for Jacobian weighting.
             encoder=ml_collections.config_dict.placeholder(str),  # Visual encoder name (None, 'impala_small', etc.).
+            
+            # Lyapunov-specific hyperparameters
+            lyapunov_reg=0.1,  # Lyapunov regularization coefficient (reduced for stability).
+            lyapunov_latent_dim=16,  # Latent dimension for Lyapunov network.
+            lyapunov_hidden_dims=(512, 512, 512),  # Hidden layer dimensions for Lyapunov network.
+            lyapunov_layer_norm=False,  # Whether to use layer normalization in Lyapunov network.
+            
+            actor_loss='pgbc',  # Actor loss type.
         )
     )
     return config

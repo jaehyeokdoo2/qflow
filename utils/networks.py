@@ -232,3 +232,217 @@ class ActorVectorField(nn.Module):
         v = self.mlp(inputs)
 
         return v
+
+class LatentLyapunovFunction(nn.Module):
+    """
+    Lyapunov function with direct latent projection
+    
+    Architecture:
+    1. Direct projection: (s,a) -> latent dimension (no layer norm here)
+    2. Hidden layers with optional layer normalization  
+    3. Output layer -> V(z) (scalar Lyapunov value)
+    
+    Attributes:
+        state_dim: State dimension.
+        action_dim: Action dimension.
+        latent_dim: Latent dimension for projection.
+        hidden_dim: Hidden layer dimension.
+        layer_norm: Whether to apply layer normalization.
+    """
+    
+    hidden_dim: Sequence[int]
+    state_dim: int = 2
+    action_dim: int = 2
+    latent_dim: int = 16
+    layer_norm: bool = False
+
+    def setup(self):
+        # Direct latent projection layer with proper initialization and activation
+        self.latent_projection = nn.Dense(
+            self.latent_dim, 
+            kernel_init=nn.initializers.variance_scaling(0.1, 'fan_avg', 'uniform')  # Smaller initialization
+        )
+        
+        # Lyapunov network using MLP for hidden layers
+        self.lyapunov_mlp = MLP(
+            hidden_dims=(*self.hidden_dim, 1),
+            activate_final=False,  # No activation on final layer to allow negative values
+            layer_norm=self.layer_norm,
+            kernel_init=nn.initializers.variance_scaling(0.1, 'fan_avg', 'uniform')  # Smaller initialization
+        )
+        
+    def __call__(self, state, action):
+        """
+        Forward pass: (s,a) -> latent projection -> hidden layers -> V(z)
+        This returns the RAW network output (higher values for expert actions)
+        
+        Args:
+            state: State tensor.
+            action: Action tensor.
+        """
+        # Handle single dimension inputs by expanding if needed
+        if len(state.shape) == 1:
+            state = jnp.expand_dims(state, axis=0)
+        if len(action.shape) == 1:
+            action = jnp.expand_dims(action, axis=0)
+            
+        # Concatenate state and action
+        sa_input = jnp.concatenate([state, action], axis=-1)
+        
+        # Direct latent projection with activation to prevent unbounded growth
+        latent = self.latent_projection(sa_input)
+        latent = nn.tanh(latent)  # Bound the latent representation
+        
+        # Process through MLP to get Lyapunov value
+        v_value = self.lyapunov_mlp(latent)
+        
+        return v_value.squeeze(-1)
+    
+    def lyapunov_value(self, state, action):
+        """
+        Get the actual Lyapunov value: -V(s,a) (negated for proper interpretation)
+        Use this for evaluation and plotting where lower values should indicate safer actions
+        
+        Args:
+            state: State tensor.
+            action: Action tensor.
+        """
+        return -self.__call__(state, action)
+    
+class EncoderDecoderLyapunovFunction(nn.Module):
+    """
+    Lyapunov function with separate encoder-decoder components
+    
+    Architecture:
+    1. Encoder: (s,a) -> latent dimension
+    2. Decoder: latent -> (s,a) reconstruction  
+    3. Lyapunov MLP: latent -> V(z) (scalar Lyapunov value)
+    
+    Attributes:
+        state_dim: State dimension.
+        action_dim: Action dimension.
+        latent_dim: Latent dimension for projection.
+        hidden_dim: Hidden layer dimension.
+        layer_norm: Whether to apply layer normalization.
+    """
+
+    encoder_hidden_dim: Sequence[int]
+    decoder_hidden_dim: Sequence[int]
+    hidden_dim: Sequence[int]
+    state_dim: int = 2
+    action_dim: int = 2
+    latent_dim: int = 16
+    layer_norm: bool = False
+    module_layer_norm: bool = False
+
+    def setup(self):
+        # Encoder
+        self.encoder = MLP(
+            hidden_dims=(*self.encoder_hidden_dim, self.latent_dim),
+            activate_final=False,
+            layer_norm=self.module_layer_norm
+        )
+
+        # Decoder
+        self.decoder = MLP(
+            hidden_dims=(*self.decoder_hidden_dim, self.state_dim + self.action_dim),
+            activate_final=False,
+            layer_norm=self.module_layer_norm
+        )
+
+        # Lyapunov MLP
+        self.lyapunov_mlp = MLP(
+            hidden_dims=(*self.hidden_dim, 1),
+            activate_final=False,
+            layer_norm=self.layer_norm
+        )
+    
+    def encode(self, state, action):
+        """Encode state-action pair to latent representation."""
+        sa_input = jnp.concatenate([state, action], axis=-1)
+        return self.encoder(sa_input)
+    
+    def decode(self, latent):
+        """Decode latent representation back to state-action pair."""
+        decoded = self.decoder(latent)
+        decoded_state = decoded[:, :self.state_dim]
+        decoded_action = decoded[:, self.state_dim:]
+        return decoded_state, decoded_action
+    
+    def lyapunov_value(self, latent):
+        """Compute Lyapunov value from latent representation."""
+        return self.lyapunov_mlp(latent).squeeze(-1)
+    
+    def __call__(self, state, action):
+        """
+        Forward pass: (s,a) -> latent -> V(z)
+        
+        Returns only the Lyapunov value.
+        
+        Args:
+            state: State tensor
+            action: Action tensor
+            
+        Returns:
+            lyapunov_value: Scalar Lyapunov value
+        """
+        latent = self.encode(state, action)
+        return self.lyapunov_value(latent)
+    
+    def process_pair(self, state, action):
+        """
+        Encode and decode the state and action (used for reconstruction)
+        """
+
+        latent = self.encoder(jnp.concatenate([state, action], axis=-1))
+        decoded = self.decoder(latent)
+        decoded_state = decoded[:, :self.state_dim]
+        decoded_action = decoded[:, self.state_dim:]
+        return decoded_state, decoded_action
+    
+    def reconstruction_loss(self, state, action):
+        """
+        Compute reconstruction loss: MSE between original and reconstructed (s,a) pairs
+        
+        Args:
+            state: State tensor.
+            action: Action tensor.
+            
+        Returns:
+            reconstruction_loss: MSE loss between original and reconstructed inputs
+        """
+        decoded_state, decoded_action = self.process_pair(state, action)
+        
+        # Compute MSE loss for both state and action reconstruction
+        state_loss = jnp.mean((state - decoded_state) ** 2)
+        action_loss = jnp.mean((action - decoded_action) ** 2)
+        
+        return state_loss + action_loss
+    
+    def encode_only(self, sa_input):
+        """Apply encoder only."""
+        return self.encoder(sa_input)
+    
+    def decode_only(self, latent):
+        """Apply decoder only."""
+        return self.decoder(latent)
+    
+    def reconstruct(self, state, action):
+        """Reconstruct state and action through encoder-decoder."""
+        sa_input = jnp.concatenate([state, action], axis=-1)
+        latent = self.encoder(sa_input)
+        decoded = self.decoder(latent)
+        decoded_state = decoded[:, :self.state_dim]
+        decoded_action = decoded[:, self.state_dim:]
+        return decoded_state, decoded_action
+    
+    def lyapunov_value(self, state, action):
+        """
+        Get the actual Lyapunov value: -V(s,a) (negated for proper interpretation)
+        Use this for evaluation and plotting where lower values should indicate safer actions
+        
+        Args:
+            state: State tensor.
+            action: Action tensor.
+        """
+        return -self.__call__(state, action)

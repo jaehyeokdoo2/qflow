@@ -12,7 +12,7 @@ from utils.flax_utils import ModuleDict, TrainState, nonpytree_field
 from utils.networks import ActorVectorField, Value
 
 
-class IFQLAgent(flax.struct.PyTreeNode):
+class IFQLModifiedAgent(flax.struct.PyTreeNode):
     """Implicit flow Q-learning (IFQL) agent.
 
     IFQL is the flow variant of implicit diffusion Q-learning (IDQL).
@@ -58,10 +58,17 @@ class IFQLAgent(flax.struct.PyTreeNode):
         }
 
     def actor_loss(self, batch, grad_params, rng=None):
-        """Compute the behavioral flow-matching actor loss."""
+        """Compute the behavioral flow-matching actor loss.
+        Original IFQL: simple behavior cloning + Q-value argmax operator only during inference
+        Modified IFQL: try to maximize the Q-value altogether at the same time
+
+        Motivation
+        * The effect of Q value divergence on the actor is not well understood without flowing critic signal to actor during training
+        """
         batch_size, action_dim = batch['actions'].shape
         rng, x_rng, t_rng = jax.random.split(rng, 3)
 
+        # Behavior cloning (Flow-matching)
         x_0 = jax.random.normal(x_rng, (batch_size, action_dim))
         x_1 = batch['actions']
         t = jax.random.uniform(t_rng, (batch_size, 1))
@@ -69,10 +76,23 @@ class IFQLAgent(flax.struct.PyTreeNode):
         vel = x_1 - x_0
 
         pred = self.network.select('actor_flow')(batch['observations'], x_t, t, params=grad_params)
-        actor_loss = jnp.mean((pred - vel) ** 2)
+        bc_flow_loss = jnp.mean((pred - vel) ** 2)
+
+        # Q-value maximization with critic signal (Q loss.)
+        actor_actions = self.sample_actions(batch['observations'], seed=rng, params=grad_params)
+        qs = self.network.select('critic')(batch['observations'], actions=actor_actions)
+        q = jnp.mean(qs, axis=0)  # or jnp.minimum(qs[0], qs[1])
+
+        q_loss = -q.mean()
+        
+        # Total loss.
+        actor_loss = bc_flow_loss + q_loss
 
         return actor_loss, {
             'actor_loss': actor_loss,
+            'bc_flow_loss': bc_flow_loss,
+            'q_loss': q_loss,
+            'q': q.mean(),
         }
 
     @jax.jit
@@ -120,45 +140,54 @@ class IFQLAgent(flax.struct.PyTreeNode):
         return self.replace(network=new_network, rng=new_rng), info
 
     @jax.jit
-    def sample_actions(
-        self,
-        observations,
-        seed=None,
-        temperature=1.0,
-        return_full_candidates=False,
-    ):
-        """Sample actions from the actor."""
-        orig_observations = observations
+    def sample_actions(self, observations, seed=None, temperature=1.0, params=None):
         if self.config['encoder'] is not None:
-            observations = self.network.select('actor_flow_encoder')(observations)
-        action_seed, noise_seed = jax.random.split(seed)
+            observations = self.network.select('actor_flow_encoder')(observations, params=params)
 
-        # Sample `num_samples` noises and propagate them through the flow.
-        actions = jax.random.normal(
-            action_seed,
-            (
-                *observations.shape[:-1],
-                self.config['num_samples'],
-                self.config['action_dim'],
-            ),
-        )
-        n_observations = jnp.repeat(jnp.expand_dims(observations, 0), self.config['num_samples'], axis=0)
-        n_orig_observations = jnp.repeat(jnp.expand_dims(orig_observations, 0), self.config['num_samples'], axis=0)
+        action_seed, _ = jax.random.split(seed)
+        actions = jax.random.normal(action_seed, (*observations.shape[:-1], self.config['action_dim']))
+
         for i in range(self.config['flow_steps']):
-            t = jnp.full((*observations.shape[:-1], self.config['num_samples'], 1), i / self.config['flow_steps'])
-            vels = self.network.select('actor_flow')(n_observations, actions, t, is_encoded=True)
+            t = jnp.full((*observations.shape[:-1], 1), i / self.config['flow_steps'])
+            vels = self.network.select('actor_flow')(observations, actions, t, is_encoded=True, params=params)
             actions = actions + vels / self.config['flow_steps']
-        actions = jnp.clip(actions, -1, 1)
-        full_candidates = actions
 
-        # Pick the action with the highest Q-value.
-        q = self.network.select('critic')(n_orig_observations, actions=actions).min(axis=0)
-        actions = actions[jnp.argmax(q)]
+        return jnp.clip(actions, -1, 1)
 
-        if return_full_candidates:
-            return actions, full_candidates
-        else:
-            return actions
+    # @jax.jit
+    # def sample_actions(
+    #     self,
+    #     observations,
+    #     seed=None,
+    #     temperature=1.0,
+    # ):
+    #     """Sample actions from the actor."""
+    #     orig_observations = observations
+    #     if self.config['encoder'] is not None:
+    #         observations = self.network.select('actor_flow_encoder')(observations)
+    #     action_seed, noise_seed = jax.random.split(seed)
+
+    #     # Sample `num_samples` noises and propagate them through the flow.
+    #     actions = jax.random.normal(
+    #         action_seed,
+    #         (
+    #             *observations.shape[:-1],
+    #             self.config['num_samples'],
+    #             self.config['action_dim'],
+    #         ),
+    #     )
+    #     n_observations = jnp.repeat(jnp.expand_dims(observations, 0), self.config['num_samples'], axis=0)
+    #     n_orig_observations = jnp.repeat(jnp.expand_dims(orig_observations, 0), self.config['num_samples'], axis=0)
+    #     for i in range(self.config['flow_steps']):
+    #         t = jnp.full((*observations.shape[:-1], self.config['num_samples'], 1), i / self.config['flow_steps'])
+    #         vels = self.network.select('actor_flow')(n_observations, actions, t, is_encoded=True)
+    #         actions = actions + vels / self.config['flow_steps']
+    #     actions = jnp.clip(actions, -1, 1)
+
+    #     # Pick the action with the highest Q-value.
+    #     q = self.network.select('critic')(n_orig_observations, actions=actions).min(axis=0)
+    #     actions = actions[jnp.argmax(q)]
+    #     return actions
 
     @classmethod
     def create(
@@ -237,7 +266,7 @@ class IFQLAgent(flax.struct.PyTreeNode):
 def get_config():
     config = ml_collections.ConfigDict(
         dict(
-            agent_name='ifql',  # Agent name.
+            agent_name='ifql_modified',  # Agent name.
             action_dim=ml_collections.config_dict.placeholder(int),  # Action dimension (will be set automatically).
             lr=3e-4,  # Learning rate.
             batch_size=256,  # Batch size.
@@ -248,7 +277,6 @@ def get_config():
             discount=0.99,  # Discount factor.
             tau=0.005,  # Target network update rate.
             expectile=0.9,  # IQL expectile.
-            num_samples=32,  # Number of action samples for rejection sampling.
             flow_steps=10,  # Number of flow steps.
             encoder=ml_collections.config_dict.placeholder(str),  # Visual encoder name (None, 'impala_small', etc.).
         )
