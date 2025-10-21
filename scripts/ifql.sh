@@ -4,7 +4,7 @@ set -e
 
 # Env
 # env_name="antmaze-large-navigate-singletask-task2-v0"
-env_name="antmaze-giant-navigate-singletask-task1-v0"
+env_name="antmaze-large-navigate-singletask-task1-v0"
 
 offline_steps=1000000
 eval_interval=50000

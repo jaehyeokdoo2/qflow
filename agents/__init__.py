@@ -11,6 +11,8 @@ from agents.rebrac_idm import ReBRACIDMAgent
 from agents.fql_idm import FQLIDMAgent
 from agents.fql_separate import FQLSeparateAgent
 from agents.lyapunov_fbrac import LyapunovFBRACAgent
+from agents.dql import DQLAgent
+from agents.idql import IDQLAgent
 
 agents = dict(
     fql=FQLAgent,
@@ -26,4 +28,6 @@ agents = dict(
     fql_idm_fixed=FQLIDMAgent,
     fql_separate=FQLSeparateAgent,
     lyapunov_fbrac=LyapunovFBRACAgent,
+    dql=DQLAgent,
+    idql=IDQLAgent,
 )

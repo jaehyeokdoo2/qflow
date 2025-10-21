@@ -25,6 +25,7 @@ flags.DEFINE_string('run_group', 'Debug', 'Run group.')
 flags.DEFINE_integer('seed', 0, 'Random seed.')
 flags.DEFINE_string('env_name', 'cube-double-play-singletask-v0', 'Environment (dataset) name.')
 flags.DEFINE_string('save_dir', 'exp/', 'Save directory.')
+flags.DEFINE_string('exp_name', None, 'Experiment name.')
 flags.DEFINE_string('restore_path', None, 'Restore path.')
 flags.DEFINE_integer('restore_epoch', None, 'Restore epoch.')
 
@@ -34,7 +35,6 @@ flags.DEFINE_integer('buffer_size', 2000000, 'Replay buffer size.')
 flags.DEFINE_integer('log_interval', 5000, 'Logging interval.')
 flags.DEFINE_integer('eval_interval', 100000, 'Evaluation interval.')
 flags.DEFINE_integer('save_interval', 1000000, 'Saving interval.')
-flags.DEFINE_integer('num_updates', 1, 'Number of updates per step.')
 
 flags.DEFINE_integer('eval_episodes', 50, 'Number of evaluation episodes.')
 flags.DEFINE_integer('video_episodes', 0, 'Number of video episodes for each task.')
@@ -51,8 +51,11 @@ def main(_):
     # Set up logger.
     agent_name = FLAGS.agent.agent_name
     env_name = FLAGS.env_name
-    exp_name = f"{agent_name}_{env_name}_{get_exp_name(FLAGS.seed)}_utd-ratio{FLAGS.num_updates}"
-    setup_wandb(project='fql', group=FLAGS.run_group, name=exp_name)
+    if FLAGS.exp_name is not None:
+        exp_name = FLAGS.exp_name
+    else:
+        exp_name = f"{agent_name}_{env_name}_sd{FLAGS.seed}"
+    setup_wandb(project=agent_name, group=FLAGS.run_group, name=exp_name)
 
     FLAGS.save_dir = os.path.join(FLAGS.save_dir, wandb.run.project, FLAGS.run_group, exp_name)
     os.makedirs(FLAGS.save_dir, exist_ok=True)
@@ -122,11 +125,10 @@ def main(_):
             # Offline RL.
             batch = train_dataset.sample(config['batch_size'])
 
-            for _ in range(FLAGS.num_updates):
-                if config['agent_name'] == 'rebrac' or config['agent_name'] == 'frebrac':
-                    agent, update_info = agent.update(batch, full_update=(i % config['actor_freq'] == 0))
-                else:
-                    agent, update_info = agent.update(batch)
+            if config['agent_name'] == 'rebrac' or config['agent_name'] == 'frebrac':
+                agent, update_info = agent.update(batch, full_update=(i % config['actor_freq'] == 0))
+            else:
+                agent, update_info = agent.update(batch)
         else:
             # Online fine-tuning.
             online_rng, key = jax.random.split(online_rng)

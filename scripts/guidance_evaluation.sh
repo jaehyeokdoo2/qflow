@@ -4,17 +4,16 @@
 # This script runs guidance evaluation with multiple coefficients
 
 # Set default values
-ENV_NAME="humanoidmaze-medium-navigate-singletask-task2-v0"
-# ENV_NAME="antmaze-large-navigate-singletask-task3-v0"
-AGENT_NAME="fbrac"
+# ENV_NAME="humanoidmaze-medium-navigate-singletask-task3-v0"
+ENV_NAME="antmaze-large-navigate-singletask-task1-v0"
+AGENT_NAME="dql"
 RESTORE_EPOCH="1000000"
 LYAPUNOV_HIDDEN_DIMS="512,512,512"
-LYAPUNOV_LATENT_DIM=32
+LYAPUNOV_LATENT_DIM=16
 LYAPUNOV_LAYER_NORM=false
 LYAPUNOV_MODEL_STEP="1000000"
-EVAL_EPISODES=50
+EVAL_EPISODES=20
 SEED=0
-
 
 # lyapunov models
 lyp_antmaze_task1="/mnt/nas/jaehyeok/fql/exp/lyapunov/LyapunovTraining/lyapunov_antmaze-large-navigate-singletask-task1-v0_sd000_20250916_202904"
@@ -39,6 +38,10 @@ fbrac_antmaze_task3="/mnt/nas/jaehyeok/fql/exp/fql/Debug/fbrac_antmaze-large-nav
 fql_antmaze_task1="/mnt/nas/jaehyeok/fql/exp/fql/Debug/"
 fql_antmaze_task2="/mnt/nas/jaehyeok/fql/exp/fql/Debug/fql_antmaze-large-navigate-singletask-task2-v0_sd000_20250919_192530_utd-ratio1"
 
+ifql_antmaze_task1="/mnt/nas/jaehyeok/fql/exp/fql/Debug/ifql_antmaze-large-navigate-singletask-task1-v0_sd000_20251002_114231_utd-ratio1"
+
+dql_antmaze_task1="/mnt/nas/jaehyeok/fql/exp/fql/Debug/dql_antmaze-large-navigate-singletask-task1-v0_sd000_20251014_104305_utd-ratio1"
+
 # humanoid large
 fbrac_humanoid_task1="/mnt/nas/jaehyeok/fql/exp/fql/Debug/fbrac_humanoidmaze-medium-navigate-singletask-task1-v0_sd000_20250918_191439_utd-ratio1"
 fbrac_humanoid_task2="/mnt/nas/jaehyeok/fql/exp/fql/Debug/fbrac_humanoidmaze-medium-navigate-singletask-task2-v0_sd000_20250919_085828_utd-ratio1"
@@ -46,12 +49,12 @@ fbrac_humanoid_task3="/mnt/nas/jaehyeok/fql/exp/fql/Debug/fbrac_humanoidmaze-med
 
 fql_humanoid_task3="/mnt/nas/jaehyeok/fql/exp/fql/Debug/fql_humanoidmaze-medium-navigate-singletask-task3-v0_sd000_20250919_192658_utd-ratio1"
 
-RESTORE_PATH=$fbrac_humanoid_task2
-LYAPUNOV_MODEL_PATH=$lyp_humanoid_task2
+RESTORE_PATH=$dql_antmaze_task1
+LYAPUNOV_MODEL_PATH=$lyp_antmaze_task1
 
 # Guidance coefficients to test (can be modified)
-GUIDANCE_COEFFS="0.0, 0.1, 1.0"
-PARTIAL_GUIDANCE=1
+GUIDANCE_COEFFS="0.0, 0.001, 0.01, 0.1, 0.5, 1.0"
+PARTIAL_GUIDANCE=3
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do

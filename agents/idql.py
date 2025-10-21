@@ -15,15 +15,21 @@ from utils.networks import ActorVectorField, Value
 _COMPILED_GRAD_FNS = {}
 
 
-class IFQLAgent(flax.struct.PyTreeNode):
-    """Implicit flow Q-learning (IFQL) agent.
-
-    IFQL is the flow variant of implicit diffusion Q-learning (IDQL).
+class IDQLAgent(flax.struct.PyTreeNode):
+    """Implicit diffusion Q-learning (IDQL) agent.
+    IQL + diffusion policy
     """
 
     rng: Any
     network: Any
     config: Any = nonpytree_field()
+    betas: Any
+    alphas: Any
+    sqrt_alphas: Any
+    alphas_cumprod: Any
+    alphas_cumprod_prev: Any
+    sqrt_alphas_cumprod: Any
+    sqrt_one_minus_alphas_cumprod: Any
 
     @staticmethod
     def expectile_loss(adv, diff, expectile):
@@ -61,18 +67,23 @@ class IFQLAgent(flax.struct.PyTreeNode):
         }
 
     def actor_loss(self, batch, grad_params, rng=None):
-        """Compute the behavioral flow-matching actor loss."""
+        """Compute the behavioral diffusion actor loss."""
         batch_size, action_dim = batch['actions'].shape
         rng, x_rng, t_rng = jax.random.split(rng, 3)
 
-        x_0 = jax.random.normal(x_rng, (batch_size, action_dim))
-        x_1 = batch['actions']
-        t = jax.random.uniform(t_rng, (batch_size, 1))
-        x_t = (1 - t) * x_0 + t * x_1
-        vel = x_1 - x_0
+        # Action noising
+        x_1 = jax.random.normal(x_rng, (batch_size, action_dim))
+        x_0 = batch['actions']
 
-        pred = self.network.select('actor_flow')(batch['observations'], x_t, t, params=grad_params)
-        actor_loss = jnp.mean((pred - vel) ** 2)
+        t = jax.random.randint(t_rng, (batch_size, 1), 0, self.config['diffusion_steps']) # For noise schedule extraction
+        sqrt_alphas_cumprod = self.extract(self.sqrt_alphas_cumprod, t, x_0.shape)
+        sqrt_one_minus_alphas_cumprod = self.extract(self.sqrt_one_minus_alphas_cumprod, t, x_0.shape)
+
+        t = t.astype(jnp.float32) / self.config['diffusion_steps']
+        x_t = sqrt_alphas_cumprod * x_0 + sqrt_one_minus_alphas_cumprod * x_1
+
+        pred = self.network.select('actor_diffusion')(batch['observations'], x_t, t, params=grad_params)
+        actor_loss = jnp.mean((pred - x_1) ** 2)
 
         return actor_loss, {
             'actor_loss': actor_loss,
@@ -133,10 +144,10 @@ class IFQLAgent(flax.struct.PyTreeNode):
         """Sample actions from the actor."""
         orig_observations = observations
         if self.config['encoder'] is not None:
-            observations = self.network.select('actor_flow_encoder')(observations)
+            observations = self.network.select('actor_diffusion_encoder')(observations)
         action_seed, noise_seed = jax.random.split(seed)
 
-        # Sample `num_samples` noises and propagate them through the flow.
+        # Sample `num_samples` noises and propagate them through the diffusion.
         actions = jax.random.normal(
             action_seed,
             (
@@ -145,12 +156,35 @@ class IFQLAgent(flax.struct.PyTreeNode):
                 self.config['action_dim'],
             ),
         )
+
+        # Process batched generation with batch size of num_samples
         n_observations = jnp.repeat(jnp.expand_dims(observations, 0), self.config['num_samples'], axis=0)
         n_orig_observations = jnp.repeat(jnp.expand_dims(orig_observations, 0), self.config['num_samples'], axis=0)
-        for i in range(self.config['flow_steps']):
-            t = jnp.full((*observations.shape[:-1], self.config['num_samples'], 1), i / self.config['flow_steps'])
-            vels = self.network.select('actor_flow')(n_observations, actions, t, is_encoded=True)
-            actions = actions + vels / self.config['flow_steps']
+        for i in range(self.config['diffusion_steps'])[::-1]:  # FIXED: Reverse order (T-1 → 0)
+            t = jnp.full((*observations.shape[:-1], self.config['num_samples'], 1), i / self.config['diffusion_steps'])
+            t_int = jnp.full((*observations.shape[:-1], self.config['num_samples'], 1), i)
+
+            # Reverse diffusion process
+            betas = self.extract(self.betas, t_int, actions.shape)
+            sqrt_alphas = self.extract(self.sqrt_alphas, t_int, actions.shape)
+            sqrt_one_minus_alphas_cumprod = self.extract(self.sqrt_one_minus_alphas_cumprod, t_int, actions.shape)
+            preds = self.network.select('actor_diffusion')(n_observations, actions, t, is_encoded=True)
+
+            # Split seed BEFORE generating noise
+            noise_seed, step_noise_seed = jax.random.split(noise_seed)
+            step_noise = jax.random.normal(
+                step_noise_seed,
+                (
+                    *observations.shape[:-1],
+                    self.config['num_samples'],
+                    self.config['action_dim'],
+                ),
+            )
+
+            # Don't add noise in the final step (i=0)
+            noise_scale = jnp.where(i > 0, jnp.sqrt(betas), 0.0)
+            actions = actions / sqrt_alphas - betas / (sqrt_alphas * sqrt_one_minus_alphas_cumprod) * preds + noise_scale * step_noise
+
         actions = jnp.clip(actions, -1, 1)
         full_candidates = actions
 
@@ -166,7 +200,7 @@ class IFQLAgent(flax.struct.PyTreeNode):
     def _get_energy_grad_fn(self, energy_fn):
         """
         Get or create a pre-compiled gradient function for the energy function.
-        This avoids recompiling the gradient computation in every flow step.
+        This avoids recompiling the gradient computation in every diffusion step.
         
         Args:
             energy_fn: Energy function that takes (observations, actions) and returns energy values
@@ -203,15 +237,15 @@ class IFQLAgent(flax.struct.PyTreeNode):
         partial_guidance=-1,
     ):
         """
-        Sample actions from the policy with energy-based guidance (FBRAC-style),
-        adapted to IFQL's multi-sample generation and action selection.
+        Sample actions from the policy with energy-based guidance (DQL-style),
+        adapted to IDQL's multi-sample generation and action selection.
         """
-        # Scheduling and options (matching FBRAC)
+        # Scheduling and options
         rescale_strategy = "normalize"
         pred_clean = True
         guidance_scheduling = "fixed"
         last_step_guidance = True
-
+        diffusion_steps = self.config['diffusion_steps']
         if guidance_coeff == 0.0:
             partial_guidance = 0
 
@@ -226,26 +260,25 @@ class IFQLAgent(flax.struct.PyTreeNode):
             if guidance_scheduling == "fixed":
                 return guidance_coeff
             elif guidance_scheduling == "linear":
-                return min_guidance + (guidance_coeff - min_guidance) * (i+1) / flow_steps
+                return min_guidance + (guidance_coeff - min_guidance) * (i+1) / diffusion_steps
             elif guidance_scheduling == "exp":
-                factor = (jnp.exp((i+1)*exp_k/flow_steps) - 1)/(jnp.exp(exp_k) - 1)
+                factor = (jnp.exp((i+1)*exp_k/diffusion_steps) - 1)/(jnp.exp(exp_k) - 1)
                 return min_guidance + (guidance_coeff - min_guidance) * factor
             else:
                 raise ValueError(f"Invalid guidance_scheduling: {guidance_scheduling}")
-        
+
         energy_vals = []
         gradient_vals = []
         cosine_sim_vals = []
-        
-        # Split seed: one for action sampling, one for guidance
-        action_seed, guidance_rng = jax.random.split(seed)
-        
-        # Handle encoder if needed
+
+        seed, action_seed = jax.random.split(seed)
+
+        # Preserve un-encoded observations for energy and Q computation
         orig_observations = observations
         if self.config['encoder'] is not None:
-            observations = self.network.select('actor_flow_encoder')(observations)
-        
-        # Sample `num_samples` noises and propagate through flow with guidance
+            observations = self.network.select('actor_diffusion_encoder')(observations)
+
+        # Multi-candidate action tensor: (B, S, A)
         actions = jax.random.normal(
             action_seed,
             (
@@ -254,95 +287,90 @@ class IFQLAgent(flax.struct.PyTreeNode):
                 self.config['action_dim'],
             ),
         )
-        
-        # Determine when to apply guidance (matching FBRAC logic)
-        flow_steps = self.config['flow_steps']
+
         if partial_guidance == -1:
             guidance_start_step = 0
-            guidance_end_step = flow_steps
-        elif 0 < partial_guidance < flow_steps:
+            guidance_end_step = diffusion_steps
+        elif 0 < partial_guidance < diffusion_steps:
             if last_step_guidance:
-                guidance_start_step = flow_steps - partial_guidance
-                guidance_end_step = flow_steps
+                guidance_start_step = diffusion_steps - partial_guidance
+                guidance_end_step = diffusion_steps
             else:
                 guidance_start_step = 0
                 guidance_end_step = partial_guidance
         else:
-            guidance_start_step = flow_steps
-            guidance_end_step = flow_steps
+            guidance_start_step = diffusion_steps
+            guidance_end_step = diffusion_steps
             print(f"Warning: Invalid partial_guidance value {partial_guidance}. Using no guidance.")
-        
-        # Pre-compile gradient function
-        energy_grad_fn = None
-        if guidance_start_step < flow_steps:
-            try:
-                energy_grad_fn = self._get_energy_grad_fn(energy_fn)
-            except Exception as e:
-                print(f"Error pre-compiling gradient function: {e}")
-                energy_grad_fn = None
-        
-        # Tile observations for multi-candidate approach
+
+        # Tile observations to (num_samples, obs_dim) for network calls (matching sample_actions)
         n_observations = jnp.repeat(jnp.expand_dims(observations, 0), self.config['num_samples'], axis=0)
         n_orig_observations = jnp.repeat(jnp.expand_dims(orig_observations, 0), self.config['num_samples'], axis=0)
-        
-        # Apply flow steps with conditional guidance
-        for i in range(flow_steps):
-            t = jnp.full((*observations.shape[:-1], self.config['num_samples'], 1), i / flow_steps)
-            
-            # Get flow velocity from actor
-            vels = self.network.select('actor_flow')(n_observations, actions, t, is_encoded=True)
-            
-            # Only compute guidance weight if we might need it
+
+        # Diffusion sampling with conditional guidance
+        for i in range(diffusion_steps)[::-1]:  # FIXED: Reverse order (T-1 → 0)
+            t = jnp.full((*observations.shape[:-1], self.config['num_samples'], 1), i / diffusion_steps)
+            t_int = jnp.full((*observations.shape[:-1], self.config['num_samples'], 1), i)
+
+            betas = self.extract(self.betas, t_int, actions.shape)
+            sqrt_alphas = self.extract(self.sqrt_alphas, t_int, actions.shape)
+            sqrt_one_minus_alphas_cumprod = self.extract(self.sqrt_one_minus_alphas_cumprod, t_int, actions.shape)
+
+            preds = self.network.select('actor_diffusion')(n_observations, actions, t, is_encoded=True)
+
+            # Split seed BEFORE generating noise
+            seed, step_noise_seed = jax.random.split(seed)
+            step_noise = jax.random.normal(
+                step_noise_seed,
+                actions.shape,
+            )
+
             guidance_weight = jnp.where(
                 guidance_coeff != 0.0,
                 get_guidance_strength(i),
                 0.0
             )
 
+            # Don't add noise in the final step (i=0)
+            noise_scale = jnp.where(i > 0, jnp.sqrt(betas), 0.0)
+            
             def apply_guidance():
-                if energy_grad_fn is not None:
-                    # Batched gradient computation without vmap
-                    # Define Q function that takes entire batch and returns scalar
-                    def q_fn_batched(actions_batch):
-                        # actions_batch: (num_samples, action_dim)
-                        if pred_clean:
-                            a_0 = actions_batch - (1 - t) * vels
-                            a_0 = jnp.clip(a_0, -1, 1)
-                        else:
-                            a_0 = actions_batch
-                        qs = self.network.select('critic')(n_observations, a_0)  # (E, num_samples)
-                        # Sum of min Q-values across samples (scalar)
-                        return jnp.sum(jnp.min(qs, axis=0))
-                    
-                    # Compute gradient w.r.t. entire batch (returns same shape as actions)
-                    q_grad = jax.grad(q_fn_batched)(actions)
-                    guidance_grad = q_grad
-                    
-                    if rescale_strategy == "normalize":
-                        # Normalize to match velocity magnitude
-                        guidance_grad = guidance_grad * jnp.linalg.norm(vels, axis=-1, keepdims=True) / (1e-8 + jnp.linalg.norm(guidance_grad, axis=-1, keepdims=True))
-                    
-                    return guidance_grad, 0.0
-                else:
-                    return jnp.zeros_like(vels), 0.0
+                def q_fn_batched(actions_batch):
+                    # actions_batch: (num_samples, action_dim)
+                    if pred_clean:
+                        # Compute a_0 from a_t
+                        a_0 = (actions_batch - sqrt_one_minus_alphas_cumprod * preds) / sqrt_alphas
+                        a_0 = jnp.clip(a_0, -1, 1)
+                    else:
+                        a_0 = actions_batch
+                    qs = self.network.select('critic')(n_orig_observations, a_0)  # (E, num_samples)
+                    # Sum of min Q-values across samples (scalar)
+                    return jnp.sum(jnp.min(qs, axis=0))
+                
+                q_grad = jax.grad(q_fn_batched)(actions)
+                guidance_grad = q_grad
+
+                if rescale_strategy == "normalize":
+                    guidance_grad = guidance_grad * jnp.linalg.norm(preds, axis=-1, keepdims=True) / (1e-8 + jnp.linalg.norm(guidance_grad, axis=-1, keepdims=True))
+
+                return guidance_grad, 0.0
             
             def no_guidance():
-                return jnp.zeros_like(vels), 0.0
+                return jnp.zeros_like(preds), 0.0
             
             # Check if we should apply guidance
             should_apply = (guidance_coeff != 0.0 and 
-                          i >= guidance_start_step and 
-                          i < guidance_end_step and
-                          energy_grad_fn is not None)
-            
+                            i >= guidance_start_step and 
+                            i < guidance_end_step)
+
             # Use JAX conditional
             guidance_grad, _ = jax.lax.cond(
                 should_apply,
                 apply_guidance,
                 no_guidance
-            )
-            
-            # Check for NaN/Inf
+            )    
+
+            # Check for NaN/Inf and scale
             guidance_grad = jnp.where(
                 jnp.isnan(guidance_grad) | jnp.isinf(guidance_grad),
                 0.0,
@@ -352,22 +380,39 @@ class IFQLAgent(flax.struct.PyTreeNode):
 
             gradient_vals.append(0.0)
             cosine_sim_vals.append(0.0)
-            
-            # Only apply guidance weight if we should apply guidance
+
             effective_guidance_weight = jnp.where(should_apply, guidance_weight, 0.0)
-            guided_vels = vels + effective_guidance_weight * guidance_grad
-            
-            # Update actions
-            actions = actions + guided_vels / flow_steps
+            guided_preds = preds + effective_guidance_weight * guidance_grad
+
+            # Update actions with guided score
+            actions = actions / sqrt_alphas - betas / (sqrt_alphas * sqrt_one_minus_alphas_cumprod) * guided_preds + noise_scale * step_noise
             energy_vals.append(0.0)
-        
+
         actions = jnp.clip(actions, -1, 1)
-        
-        # Pick action with highest Q-value
+
+        # Pick best action per batch by Q over candidates
         q = self.network.select('critic')(n_orig_observations, actions=actions).min(axis=0)
         actions = actions[jnp.argmax(q)]
-        
+
         return actions, energy_vals, gradient_vals, cosine_sim_vals
+
+    def extract(self, a, t, x_shape):
+        """
+        Extracts values from array a at indices t.
+        Equivalent to PyTorch's a.gather(-1, t).
+
+        Args:
+            a: Array to extract from (1D array of shape [num_steps]).
+            t: Indices (shape [batch, 1] or [batch]).
+            x_shape: Original shape to broadcast to.
+
+        Returns:
+            Extracted and properly reshaped array.
+        """
+        b, *_ = t.shape
+        t = t.astype(jnp.int32)
+        out = a[t]
+        return out.reshape(b, *((1,) * (len(x_shape) - 1)))
 
     @classmethod
     def create(
@@ -397,7 +442,7 @@ class IFQLAgent(flax.struct.PyTreeNode):
             encoder_module = encoder_modules[config['encoder']]
             encoders['value'] = encoder_module()
             encoders['critic'] = encoder_module()
-            encoders['actor_flow'] = encoder_module()
+            encoders['actor_diffusion'] = encoder_module()
 
         # Define networks.
         value_def = Value(
@@ -412,22 +457,22 @@ class IFQLAgent(flax.struct.PyTreeNode):
             num_ensembles=2,
             encoder=encoders.get('critic'),
         )
-        actor_flow_def = ActorVectorField(
+        actor_diffusion_def = ActorVectorField(
             hidden_dims=config['actor_hidden_dims'],
             action_dim=action_dim,
             layer_norm=config['actor_layer_norm'],
-            encoder=encoders.get('actor_flow'),
+            encoder=encoders.get('actor_diffusion'),
         )
 
         network_info = dict(
             value=(value_def, (ex_observations,)),
             critic=(critic_def, (ex_observations, ex_actions)),
             target_critic=(copy.deepcopy(critic_def), (ex_observations, ex_actions)),
-            actor_flow=(actor_flow_def, (ex_observations, ex_actions, ex_times)),
+            actor_diffusion=(actor_diffusion_def, (ex_observations, ex_actions, ex_times)),
         )
-        if encoders.get('actor_flow') is not None:
-            # Add actor_flow_encoder to ModuleDict to make it separately callable.
-            network_info['actor_flow_encoder'] = (encoders.get('actor_flow'), (ex_observations,))
+        if encoders.get('actor_diffusion') is not None:
+            # Add actor_diffusion_encoder to ModuleDict to make it separately callable.
+            network_info['actor_diffusion_encoder'] = (encoders.get('actor_diffusion'), (ex_observations,))
         networks = {k: v[0] for k, v in network_info.items()}
         network_args = {k: v[1] for k, v in network_info.items()}
 
@@ -440,13 +485,34 @@ class IFQLAgent(flax.struct.PyTreeNode):
         params['modules_target_critic'] = params['modules_critic']
 
         config['action_dim'] = action_dim
-        return cls(rng, network=network, config=flax.core.FrozenDict(**config))
+
+        # Define beta schedule
+        N = config['diffusion_steps']
+        beta_min = config['beta_min']
+        beta_max = config['beta_max']
+
+        if config['beta_schedule'] == "vp":
+            t = jnp.arange(1, N+1)
+            alpha = jnp.exp(-beta_min / N - 0.5 * (beta_max - beta_min) * (2 * t - 1) / N ** 2)
+            betas = 1 - alpha
+        elif config['beta_schedule'] == "linear":
+            betas = jnp.linspace(beta_min, beta_max, N)
+        else:
+            raise ValueError(f"Invalid noise schedule type: {config['beta_schedule']}")
+
+        alphas = 1. - betas
+        sqrt_alphas = jnp.sqrt(alphas)
+        alphas_cumprod = jnp.cumprod(alphas, axis=0)
+        alphas_cumprod_prev = jnp.concatenate([jnp.ones(1), alphas_cumprod[:-1]])
+        sqrt_alphas_cumprod = jnp.sqrt(alphas_cumprod)
+        sqrt_one_minus_alphas_cumprod = jnp.sqrt(1 - alphas_cumprod)
+        return cls(rng, network=network, config=flax.core.FrozenDict(**config), betas=betas, alphas=alphas, sqrt_alphas=sqrt_alphas, alphas_cumprod=alphas_cumprod, alphas_cumprod_prev=alphas_cumprod_prev, sqrt_alphas_cumprod=sqrt_alphas_cumprod, sqrt_one_minus_alphas_cumprod=sqrt_one_minus_alphas_cumprod)
 
 
 def get_config():
     config = ml_collections.ConfigDict(
         dict(
-            agent_name='ifql',  # Agent name.
+            agent_name='idql',  # Agent name.
             action_dim=ml_collections.config_dict.placeholder(int),  # Action dimension (will be set automatically).
             lr=3e-4,  # Learning rate.
             batch_size=256,  # Batch size.
@@ -458,8 +524,11 @@ def get_config():
             tau=0.005,  # Target network update rate.
             expectile=0.9,  # IQL expectile.
             num_samples=32,  # Number of action samples for rejection sampling.
-            flow_steps=10,  # Number of flow steps.
+            diffusion_steps=10,  # Number of diffusion steps.
             encoder=ml_collections.config_dict.placeholder(str),  # Visual encoder name (None, 'impala_small', etc.).
+            beta_schedule="vp",
+            beta_min=0.1,
+            beta_max=10.0,
         )
     )
     return config

@@ -18,7 +18,6 @@ from envs.env_utils import make_env_and_datasets
 from utils.datasets import Dataset, ReplayBuffer
 from utils.evaluation import evaluate, flatten, supply_rng
 from utils.flax_utils import restore_agent, save_agent
-from utils.networks import LatentLyapunovFunction
 
 FLAGS = flags.FLAGS
 
@@ -49,55 +48,6 @@ flags.DEFINE_list('guidance_coeffs', ['0.0', '0.0001', '0.001', '0.01', '0.1'], 
 flags.DEFINE_integer('partial_guidance', -1, 'If -1, apply guidance for entire sampling process. If > 0 and < flow_steps, apply guidance only to last {partial_guidance} steps.')
 
 config_flags.DEFINE_config_file('agent', None, lock_config=False)
-
-
-def load_lyapunov_network(model_path, model_step, lyapunov_fn, state_dim, action_dim):
-    """Load the saved Lyapunov network parameters."""
-    import pickle
-    
-    # Load parameters
-    params_path = os.path.join(model_path, f'lyapunov_params_step_{model_step}.npz')
-    tree_path = os.path.join(model_path, f'lyapunov_tree_step_{model_step}.pkl')
-    
-    if not os.path.exists(params_path):
-        raise FileNotFoundError(f"Parameters file not found: {params_path}")
-    if not os.path.exists(tree_path):
-        raise FileNotFoundError(f"Tree structure file not found: {tree_path}")
-    
-    # Load tree definition
-    with open(tree_path, 'rb') as f:
-        tree_def = pickle.load(f)
-    
-    # Load flattened parameters
-    params_data = np.load(params_path)
-    flat_params = [params_data[f'arr_{i}'] for i in range(len(params_data.files))]
-    
-    # Reconstruct parameter tree
-    params = jax.tree_util.tree_unflatten(tree_def, flat_params)
-    
-    print(f"Loaded Lyapunov network from {model_path} at step {model_step}")
-    return params
-
-
-def create_energy_function(lyapunov_fn, lyapunov_params):
-    """
-    Create an energy function from the Lyapunov function.
-    The energy function should return lower values for safer actions.
-    """
-    def energy_fn(observations, actions):
-        try:
-            # Use the Lyapunov function to compute energy
-            # The model gives higher V(s,a) for safe actions, so we negate to get lower energy for safe actions
-            lyapunov_values = lyapunov_fn.apply(lyapunov_params, observations, actions)
-            # Return negative Lyapunov values as energy (lower energy = safer)
-            return -lyapunov_values
-        except Exception as e:
-            print(f"Error in energy function: {e}")
-            # Return zero energy if there's an error
-            return jnp.zeros(observations.shape[0])
-    
-    # JIT compile the energy function for better performance
-    return jax.jit(energy_fn)
 
 
 def evaluate_with_guidance(
@@ -134,35 +84,15 @@ def evaluate_with_guidance(
     
     # Create guided actor function
     def guided_actor_fn(observations, seed=None, temperature=eval_temperature):
-        try:
-            if use_cov:
-                # Use covariance-based guidance method
-                return agent.sample_action_with_guidance_cov(
-                    observations=observations,
-                    energy_fn=energy_fn,
-                    seed=seed,
-                    n_samples=16,
-                    eta=1.0,
-                    eps=1e-6,
-                    lambda_min=0.0,
-                    lambda_max=3.0,
-                    temperature=temperature,
-                    partial_guidance=partial_guidance
-                )
-            else:
-                # Use regular fixed coefficient guidance method
-                return agent.sample_action_with_guidance(
-                    observations=observations,
-                    energy_fn=energy_fn,
-                    seed=seed,
-                    guidance_coeff=guidance_coeff,
-                    temperature=temperature,
-                    partial_guidance=partial_guidance
-                )
-        except Exception as e:
-            print(f"Error in guided actor function: {e}")
-            # Fall back to regular sampling if guidance fails
-            return agent.sample_actions(observations, seed=seed, temperature=temperature)
+        # Use regular fixed coefficient guidance method
+        return agent.sample_action_with_guidance(
+            observations=observations,
+            energy_fn=energy_fn,
+            seed=seed,
+            guidance_coeff=guidance_coeff,
+            temperature=temperature,
+            partial_guidance=partial_guidance
+        )
     
     # JIT-compile the guided actor function for better performance
     method_name = "covariance-based" if use_cov else "fixed coefficient"
@@ -175,6 +105,7 @@ def evaluate_with_guidance(
     energy_vals_by_episode = []
     gradient_vals_by_episode = []
     lambda_vals_by_episode = []
+    cosine_sim_vals_by_episode = []
 
     for i in trange(num_eval_episodes, desc=f"Evaluating coeff={guidance_coeff}"):
         key, ep_key = jax.random.split(key)
@@ -182,38 +113,51 @@ def evaluate_with_guidance(
         energy_vals_list = []
         gradient_vals_list = []
         lambda_vals_list = []
+        cosine_sim_vals_list = []
         observation, info = env.reset(seed=i)
         done = False
         step = 0
         while not done:
-            key, action_key = jax.random.split(key)
-            result = guided_actor_fn(observations=observation, temperature=eval_temperature, seed=action_key)
+            ep_key, action_key = jax.random.split(ep_key)
+            result = guided_actor_fn(observations=observation, temperature=eval_temperature, seed=ep_key)
             # Handle different return formats based on guidance method
-            if isinstance(result, tuple) and len(result) == 4:
-                # Covariance method returns (action, energy_vals, gradient_vals, lambda_vals)
-                action, energy_vals, gradient_vals, lambda_vals = result
+            if isinstance(result, tuple) and len(result) == 5:
+                # Covariance method returns (action, energy_vals, gradient_vals, lambda_vals, cosine_sim_vals)
+                action, energy_vals, gradient_vals, lambda_vals, cosine_sim_vals = result
                 energy_vals_list.append(energy_vals)
                 gradient_vals_list.append(gradient_vals)
                 lambda_vals_list.append(lambda_vals)
+                cosine_sim_vals_list.append(cosine_sim_vals)
+            elif isinstance(result, tuple) and len(result) == 4:
+                # Regular method returns (action, energy_vals, gradient_vals, cosine_sim_vals)
+                action, energy_vals, gradient_vals, cosine_sim_vals = result
+                energy_vals_list.append(energy_vals)
+                gradient_vals_list.append(gradient_vals)
+                cosine_sim_vals_list.append(cosine_sim_vals)
+                # Create dummy lambda values if not provided
+                lambda_vals_list.append([0.0])
             elif isinstance(result, tuple) and len(result) == 3:
-                # Regular method returns (action, energy_vals, gradient_vals)
+                # Legacy format: (action, energy_vals, gradient_vals)
                 action, energy_vals, gradient_vals = result
                 energy_vals_list.append(energy_vals)
                 gradient_vals_list.append(gradient_vals)
-                # Create dummy lambda values if not provided
+                # Create dummy lambda and cosine similarity values if not provided
                 lambda_vals_list.append([0.0])
+                cosine_sim_vals_list.append([0.0])
             elif isinstance(result, tuple) and len(result) == 2:
                 action, energy_vals = result
                 energy_vals_list.append(energy_vals)
-                # Create dummy gradient and lambda values if not provided
+                # Create dummy gradient, lambda, and cosine similarity values if not provided
                 gradient_vals_list.append([jnp.zeros_like(observation)])
                 lambda_vals_list.append([0.0])
+                cosine_sim_vals_list.append([0.0])
             else:
                 action = result
-                # Create dummy energy, gradient, and lambda values if not provided
+                # Create dummy energy, gradient, lambda, and cosine similarity values if not provided
                 energy_vals_list.append(jnp.zeros(1))
                 gradient_vals_list.append([jnp.zeros_like(observation)])
                 lambda_vals_list.append([0.0])
+                cosine_sim_vals_list.append([0.0])
             
             action = np.array(action)
             action = np.clip(action, -1, 1)
@@ -236,6 +180,7 @@ def evaluate_with_guidance(
         energy_vals_by_episode.append(energy_vals_list)
         gradient_vals_by_episode.append(gradient_vals_list)
         lambda_vals_by_episode.append(lambda_vals_list)
+        cosine_sim_vals_by_episode.append(cosine_sim_vals_list)
         add_to(stats, flatten(info))
         trajs.append(traj)
 
@@ -306,21 +251,37 @@ def evaluate_with_guidance(
         # No lambda values collected, keep as empty list
         lambda_vals_by_episode = []
 
+    # Convert cosine similarity values to regular Python lists for consistency
+    if cosine_sim_vals_by_episode and len(cosine_sim_vals_by_episode) > 0:
+        converted_cosine_sim_episodes = []
+        for episode_vals in cosine_sim_vals_by_episode:
+            # Convert JAX arrays to Python lists
+            episode_list = []
+            for val in episode_vals:
+                if hasattr(val, 'tolist'):
+                    # If it's a JAX array, convert to list
+                    episode_list.append(val.tolist())
+                elif isinstance(val, (list, tuple)):
+                    # If it's already a list/tuple, keep as is
+                    episode_list.append(list(val))
+                else:
+                    # If it's a single value, convert to float
+                    episode_list.append(float(val))
+            converted_cosine_sim_episodes.append(episode_list)
+        cosine_sim_vals_by_episode = converted_cosine_sim_episodes
+    else:
+        # No cosine similarity values collected, keep as empty list
+        cosine_sim_vals_by_episode = []
+
     for k, v in stats.items():
         stats[k] = np.mean(v)
 
-    return stats, trajs, energy_vals_by_episode, gradient_vals_by_episode, lambda_vals_by_episode
+    return stats, trajs, energy_vals_by_episode, gradient_vals_by_episode, lambda_vals_by_episode, cosine_sim_vals_by_episode
 
 
 def main(_):
     # Set up logger.
     env_name = FLAGS.env_name
-
-    # Validate required arguments for guidance
-    if FLAGS.lyapunov_model_path is None:
-        raise ValueError("Must specify --lyapunov_model_path to load Lyapunov model for guidance")
-    if FLAGS.lyapunov_model_step is None:
-        raise ValueError("Must specify --lyapunov_model_step to load Lyapunov model for guidance")
 
     # Load agent config
     if FLAGS.agent_config is None:
@@ -363,45 +324,11 @@ def main(_):
 
     # Restore agent.
     if FLAGS.restore_path is not None:
-        # For lyapunov_fbrac models, exclude the lyapunov module during evaluation
         exclude_modules = None
-        if config['agent_name'] == 'lyapunov_fbrac':
-            exclude_modules = ['modules_lyapunov']
-            print("Excluding Lyapunov module from loading for evaluation")
-        
         agent = restore_agent(agent, FLAGS.restore_path, FLAGS.restore_epoch, exclude_modules=exclude_modules)
-
-    # Load Lyapunov model for guidance
-    print("Loading Lyapunov model for guidance...")
-    
-    # Get state and action dimensions from environment
-    state_dim = example_batch['observations'].shape[-1]
-    action_dim = example_batch['actions'].shape[-1]
-    
-    # Create Lyapunov network
-    hidden_dims = [int(x) for x in FLAGS.lyapunov_hidden_dims]
-    lyapunov_fn = LatentLyapunovFunction(
-        hidden_dim=hidden_dims,
-        state_dim=state_dim,
-        action_dim=action_dim,
-        latent_dim=FLAGS.lyapunov_latent_dim,
-        layer_norm=FLAGS.lyapunov_layer_norm
-    )
-    
-    # Load trained parameters
-    lyapunov_params = load_lyapunov_network(
-        FLAGS.lyapunov_model_path, 
-        FLAGS.lyapunov_model_step, 
-        lyapunov_fn, 
-        state_dim, 
-        action_dim
-    )
     
     # Create energy function
-    energy_fn = create_energy_function(lyapunov_fn, lyapunov_params)
-    
-    print(f"Lyapunov model loaded successfully!")
-    print(f"Network architecture: {state_dim + action_dim} -> {FLAGS.lyapunov_latent_dim} -> {hidden_dims} -> 1")
+    energy_fn = None
 
     # Parse guidance coefficients
     guidance_coeffs = [float(x) for x in FLAGS.guidance_coeffs]
@@ -415,6 +342,7 @@ def main(_):
     energy_vals_by_coeff = []
     gradient_vals_by_coeff = []
     lambda_vals_by_coeff = []
+    cosine_sim_vals_by_coeff = []
     for coeff in guidance_coeffs:
         print(f"\n{'='*60}")
         print(f"EVALUATING GUIDANCE COEFFICIENT: {coeff}")
@@ -426,7 +354,7 @@ def main(_):
         
         start_time = time.time()
         
-        eval_info, trajs, energy_vals_by_episode, gradient_vals_by_episode, lambda_vals_by_episode = evaluate_with_guidance(
+        eval_info, trajs, energy_vals_by_episode, gradient_vals_by_episode, lambda_vals_by_episode, cosine_sim_vals_by_episode = evaluate_with_guidance(
             agent=agent,
             env=eval_env,
             energy_fn=energy_fn,
@@ -442,6 +370,7 @@ def main(_):
         energy_vals_by_coeff.append(energy_vals_by_episode)
         gradient_vals_by_coeff.append(gradient_vals_by_episode)
         lambda_vals_by_coeff.append(lambda_vals_by_episode)
+        cosine_sim_vals_by_coeff.append(cosine_sim_vals_by_episode)
         end_time = time.time()
         eval_time = end_time - start_time
         
@@ -484,6 +413,26 @@ def main(_):
     print(f"\n{'='*80}")
     print("EVALUATION COMPLETED")
     print(f"{'='*80}")
+    # Save summarized metrics per guidance coefficient (minimal persistence)
+    try:
+        # Save under the model directory: {restore_path or its parent}/eval_results
+        model_base_dir = FLAGS.restore_path if os.path.isdir(FLAGS.restore_path) else os.path.dirname(FLAGS.restore_path)
+        eval_dir = os.path.join(model_base_dir, 'eval_results')
+        os.makedirs(eval_dir, exist_ok=True)
+        summary_path = os.path.join(eval_dir, f"summary_{FLAGS.env_name}_sd{FLAGS.seed}_pg{FLAGS.partial_guidance}.json")
+        summary_payload = {
+            str(c): {
+                **all_results[c]['eval_info'],
+                'eval_time': all_results[c]['eval_time'],
+                'num_episodes': all_results[c]['num_episodes'],
+            }
+            for c in guidance_coeffs
+        }
+        with open(summary_path, 'w') as f:
+            json.dump(summary_payload, f, indent=2)
+        print(f"Saved summary metrics to {summary_path}")
+    except Exception as e:
+        print(f"Warning: failed to save summary metrics: {e}")
     if FLAGS.save_values:
         # Create mapping of coefficient to energy values and save as JSON
         def convert_to_json_serializable(obj):
@@ -533,10 +482,24 @@ def main(_):
                 lambda_vals_by_coeff_map[str(coeff)] = coeff_lambda_vals
             else:
                 lambda_vals_by_coeff_map[str(coeff)] = []
+
+        cosine_sim_vals_by_coeff_map = {}
+        for i, coeff in enumerate(guidance_coeffs):
+            if i < len(cosine_sim_vals_by_coeff):
+                # Convert all cosine similarity values to JSON-serializable format
+                coeff_cosine_sim_vals = convert_to_json_serializable(cosine_sim_vals_by_coeff[i])
+                cosine_sim_vals_by_coeff_map[str(coeff)] = coeff_cosine_sim_vals
+            else:
+                cosine_sim_vals_by_coeff_map[str(coeff)] = []
         
-        # Save energy, gradient, and lambda values as JSON (create directory if it doesn't exist
-        save_dir = 'guidance_eval_results'
-        os.makedirs(save_dir, exist_ok=True)
+        # Save auxiliary values under the model's eval_results directory
+        try:
+            model_base_dir = FLAGS.restore_path if os.path.isdir(FLAGS.restore_path) else os.path.dirname(FLAGS.restore_path)
+            save_dir = os.path.join(model_base_dir, 'eval_results')
+            os.makedirs(save_dir, exist_ok=True)
+        except Exception:
+            save_dir = 'guidance_eval_results'
+            os.makedirs(save_dir, exist_ok=True)
         
         # Save energy values as JSON file
         with open(os.path.join(save_dir, 'energy_vals_by_coeff.json'), 'w') as f:
@@ -550,9 +513,14 @@ def main(_):
         with open(os.path.join(save_dir, 'lambda_vals_by_coeff.json'), 'w') as f:
             json.dump(lambda_vals_by_coeff_map, f, indent=2)
         
+        # Save cosine similarity values as JSON file
+        with open(os.path.join(save_dir, 'cosine_sim_vals_by_coeff.json'), 'w') as f:
+            json.dump(cosine_sim_vals_by_coeff_map, f, indent=2)
+        
         print(f"Energy values saved to {save_dir}/energy_vals_by_coeff.json")
         print(f"Gradient values saved to {save_dir}/gradient_vals_by_coeff.json")
         print(f"Lambda values saved to {save_dir}/lambda_vals_by_coeff.json")
+        print(f"Cosine similarity values saved to {save_dir}/cosine_sim_vals_by_coeff.json")
 
 if __name__ == '__main__':
     app.run(main)
