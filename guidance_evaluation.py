@@ -42,12 +42,98 @@ flags.DEFINE_list('lyapunov_hidden_dims', [64, 64], 'Hidden layer dimensions for
 flags.DEFINE_boolean('lyapunov_layer_norm', False, 'Whether to use layer normalization in Lyapunov function.')
 flags.DEFINE_boolean('use_cov', False, 'Whether to use covariance-based guidance coefficient estimation.')
 flags.DEFINE_boolean('save_values', False, 'Whether to save energy, gradient, and lambda values.')
-
+flags.DEFINE_boolean('save_summary', False, 'Whether to save summary metrics.')
+flags.DEFINE_float('select_quantile', 1.0, 'Quantile to select the action from the rejection sampling.')
+flags.DEFINE_boolean('use_rejection_sampling', False, 'Whether to use rejection sampling.')
 # Guidance parameters
 flags.DEFINE_list('guidance_coeffs', ['0.0', '0.0001', '0.001', '0.01', '0.1'], 'List of guidance coefficients to test.')
 flags.DEFINE_integer('partial_guidance', -1, 'If -1, apply guidance for entire sampling process. If > 0 and < flow_steps, apply guidance only to last {partial_guidance} steps.')
 
 config_flags.DEFINE_config_file('agent', None, lock_config=False)
+
+def evaluate_with_rejection_sampling(
+    agent,
+    env,
+    energy_fn,
+    config=None,
+    num_eval_episodes=50,
+    eval_temperature=0,
+    select_quantile=1.0,
+    seed=0,
+    key=None,
+):
+    """Evaluate the agent in the environment using rejection sampling.
+
+    Args:
+        agent: Agent with rejection_sample_actions method.
+        env: Environment.
+        energy_fn: Energy function (not used in rejection sampling, kept for compatibility).
+        config: Configuration dictionary.
+        num_eval_episodes: Number of episodes to evaluate the agent.
+        eval_temperature: Action sampling temperature.
+        select_quantile: Quantile to select the action from the rejection sampling.
+        seed: Random seed.
+        key: JAX random key.
+
+    Returns:
+        A tuple containing the statistics and trajectories.
+    """
+    from collections import defaultdict
+    
+    # Create rejection sampling actor function
+    def rejection_actor_fn(observations, seed=None, temperature=eval_temperature):
+        return agent.rejection_sample_actions(
+            observations=observations,
+            seed=seed,
+            temperature=temperature,
+            select_quantile=select_quantile
+        )
+    
+    # JIT-compile the rejection sampling actor function for better performance
+    print(f"JIT-compiling rejection sampling actor function with quantile={select_quantile}...")
+    if key is None:
+        key = jax.random.PRNGKey(int(seed))
+    rejection_actor_fn = jax.jit(rejection_actor_fn)
+    trajs = []
+    stats = defaultdict(list)
+
+    for i in trange(num_eval_episodes, desc=f"Evaluating with rejection sampling (quantile={select_quantile})"):
+        key, ep_key = jax.random.split(key)
+        traj = defaultdict(list)
+        observation, info = env.reset(seed=i)
+        done = False
+        step = 0
+        while not done:
+            ep_key, action_key = jax.random.split(ep_key)
+            action = rejection_actor_fn(observations=observation, temperature=eval_temperature, seed=ep_key)
+            
+            action = np.array(action)
+            action = np.clip(action, -1, 1)
+
+            next_observation, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
+            step += 1
+
+            transition = dict(
+                observation=observation,
+                next_observation=next_observation,
+                action=action,
+                reward=reward,
+                done=done,
+                info=info,
+            )
+            from utils.evaluation import add_to
+            add_to(traj, transition)
+            observation = next_observation
+        
+        add_to(stats, flatten(info))
+        trajs.append(traj)
+
+    for k, v in stats.items():
+        stats[k] = np.mean(v)
+
+    return stats, trajs
+
 
 
 def evaluate_with_guidance(
@@ -330,109 +416,181 @@ def main(_):
     # Create energy function
     energy_fn = None
 
-    # Parse guidance coefficients
-    guidance_coeffs = [float(x) for x in FLAGS.guidance_coeffs]
-    print(f"Testing guidance coefficients: {guidance_coeffs}")
-    print(f"Partial guidance: {FLAGS.partial_guidance}")
-    
     # Store results
     all_results = {}
     
-    # Evaluate with different guidance coefficients
-    energy_vals_by_coeff = []
-    gradient_vals_by_coeff = []
-    lambda_vals_by_coeff = []
-    cosine_sim_vals_by_coeff = []
-    for coeff in guidance_coeffs:
+    if FLAGS.use_rejection_sampling:
+        # Evaluate with rejection sampling
         print(f"\n{'='*60}")
-        print(f"EVALUATING GUIDANCE COEFFICIENT: {coeff}")
+        print(f"EVALUATING WITH REJECTION SAMPLING")
+        print(f"Select quantile: {FLAGS.select_quantile}")
         print(f"{'='*60}")
         
-        # Reset RNG state for each coefficient to ensure consistent evaluation
+        # Reset RNG state for consistent evaluation
         random.seed(FLAGS.seed)
         np.random.seed(FLAGS.seed)
         
         start_time = time.time()
         
-        eval_info, trajs, energy_vals_by_episode, gradient_vals_by_episode, lambda_vals_by_episode, cosine_sim_vals_by_episode = evaluate_with_guidance(
+        eval_info, trajs = evaluate_with_rejection_sampling(
             agent=agent,
             env=eval_env,
             energy_fn=energy_fn,
             config=config,
             num_eval_episodes=FLAGS.eval_episodes,
             eval_temperature=0,
-            guidance_coeff=coeff,
-            partial_guidance=FLAGS.partial_guidance,
+            select_quantile=FLAGS.select_quantile,
             seed=FLAGS.seed,
             key=master_key,
-            use_cov=FLAGS.use_cov,  # Use the flag value
         )
-        energy_vals_by_coeff.append(energy_vals_by_episode)
-        gradient_vals_by_coeff.append(gradient_vals_by_episode)
-        lambda_vals_by_coeff.append(lambda_vals_by_episode)
-        cosine_sim_vals_by_coeff.append(cosine_sim_vals_by_episode)
         end_time = time.time()
         eval_time = end_time - start_time
         
         # Store results
-        all_results[coeff] = {
+        all_results['rejection_sampling'] = {
             'eval_info': eval_info,
             'eval_time': eval_time,
-            'num_episodes': FLAGS.eval_episodes
+            'num_episodes': FLAGS.eval_episodes,
+            'select_quantile': FLAGS.select_quantile
         }
         
         # Print results
-        print(f"\nGUIDANCE COEFFICIENT: {coeff}")
+        print(f"\nREJECTION SAMPLING (quantile={FLAGS.select_quantile})")
         print(f"Evaluation time: {eval_time:.2f} seconds")
         print(f"Time per episode: {eval_time/FLAGS.eval_episodes:.3f} seconds")
         print("\nResults:")
         for key, value in eval_info.items():
             print(f"  {key}: {value:.4f}")
+            
+        # Set empty lists for compatibility with summary printing
+        guidance_coeffs = ['rejection_sampling']
+        energy_vals_by_coeff = []
+        gradient_vals_by_coeff = []
+        lambda_vals_by_coeff = []
+        cosine_sim_vals_by_coeff = []
+        
+    else:
+        # Parse guidance coefficients
+        guidance_coeffs = [float(x) for x in FLAGS.guidance_coeffs]
+        print(f"Testing guidance coefficients: {guidance_coeffs}")
+        print(f"Partial guidance: {FLAGS.partial_guidance}")
+        
+        # Evaluate with different guidance coefficients
+        energy_vals_by_coeff = []
+        gradient_vals_by_coeff = []
+        lambda_vals_by_coeff = []
+        cosine_sim_vals_by_coeff = []
+        for coeff in guidance_coeffs:
+            print(f"\n{'='*60}")
+            print(f"EVALUATING GUIDANCE COEFFICIENT: {coeff}")
+            print(f"{'='*60}")
+            
+            # Reset RNG state for each coefficient to ensure consistent evaluation
+            random.seed(FLAGS.seed)
+            np.random.seed(FLAGS.seed)
+            
+            start_time = time.time()
+            
+            eval_info, trajs, energy_vals_by_episode, gradient_vals_by_episode, lambda_vals_by_episode, cosine_sim_vals_by_episode = evaluate_with_guidance(
+                agent=agent,
+                env=eval_env,
+                energy_fn=energy_fn,
+                config=config,
+                num_eval_episodes=FLAGS.eval_episodes,
+                eval_temperature=0,
+                guidance_coeff=coeff,
+                partial_guidance=FLAGS.partial_guidance,
+                seed=FLAGS.seed,
+                key=master_key,
+                use_cov=FLAGS.use_cov,  # Use the flag value
+            )
+            energy_vals_by_coeff.append(energy_vals_by_episode)
+            gradient_vals_by_coeff.append(gradient_vals_by_episode)
+            lambda_vals_by_coeff.append(lambda_vals_by_episode)
+            cosine_sim_vals_by_coeff.append(cosine_sim_vals_by_episode)
+            end_time = time.time()
+            eval_time = end_time - start_time
+            
+            # Store results
+            all_results[coeff] = {
+                'eval_info': eval_info,
+                'eval_time': eval_time,
+                'num_episodes': FLAGS.eval_episodes
+            }
+            
+            # Print results
+            print(f"\nGUIDANCE COEFFICIENT: {coeff}")
+            print(f"Evaluation time: {eval_time:.2f} seconds")
+            print(f"Time per episode: {eval_time/FLAGS.eval_episodes:.3f} seconds")
+            print("\nResults:")
+            for key, value in eval_info.items():
+                print(f"  {key}: {value:.4f}")
     
     # Print summary
     print(f"\n{'='*80}")
-    print("SUMMARY OF ALL GUIDANCE COEFFICIENTS")
+    if FLAGS.use_rejection_sampling:
+        print("SUMMARY OF REJECTION SAMPLING EVALUATION")
+    else:
+        print("SUMMARY OF ALL GUIDANCE COEFFICIENTS")
     print(f"{'='*80}")
     
     # Create a summary table
-    print(f"{'Coeff':<10} {'Success Rate':<12} {'Avg Reward':<12} {'Time/Ep':<10} {'Total Time':<12}")
-    print("-" * 60)
-    
-    for coeff in guidance_coeffs:
-        results = all_results[coeff]
+    if FLAGS.use_rejection_sampling:
+        print(f"{'Method':<20} {'Success Rate':<12} {'Avg Reward':<12} {'Time/Ep':<10} {'Total Time':<12}")
+        print("-" * 70)
+        
+        results = all_results['rejection_sampling']
         eval_info = results['eval_info']
         eval_time = results['eval_time']
         time_per_ep = eval_time / FLAGS.eval_episodes
+        select_quantile = results['select_quantile']
         
         # Extract key metrics (adjust these based on your environment's info keys)
         success_rate = eval_info.get('success', 0.0)
         avg_reward = eval_info.get('reward', 0.0)
         
-        print(f"{coeff:<10} {success_rate:<12.4f} {avg_reward:<12.4f} {time_per_ep:<10.3f} {eval_time:<12.2f}")
+        method_name = f"Rejection (q={select_quantile})"
+        print(f"{method_name:<20} {success_rate:<12.4f} {avg_reward:<12.4f} {time_per_ep:<10.3f} {eval_time:<12.2f}")
+    else:
+        print(f"{'Coeff':<10} {'Success Rate':<12} {'Avg Reward':<12} {'Time/Ep':<10} {'Total Time':<12}")
+        print("-" * 60)
+        
+        for coeff in guidance_coeffs:
+            results = all_results[coeff]
+            eval_info = results['eval_info']
+            eval_time = results['eval_time']
+            time_per_ep = eval_time / FLAGS.eval_episodes
+            
+            # Extract key metrics (adjust these based on your environment's info keys)
+            success_rate = eval_info.get('success', 0.0)
+            avg_reward = eval_info.get('reward', 0.0)
+            
+            print(f"{coeff:<10} {success_rate:<12.4f} {avg_reward:<12.4f} {time_per_ep:<10.3f} {eval_time:<12.2f}")
     
     print(f"\n{'='*80}")
     print("EVALUATION COMPLETED")
     print(f"{'='*80}")
     # Save summarized metrics per guidance coefficient (minimal persistence)
-    try:
-        # Save under the model directory: {restore_path or its parent}/eval_results
-        model_base_dir = FLAGS.restore_path if os.path.isdir(FLAGS.restore_path) else os.path.dirname(FLAGS.restore_path)
-        eval_dir = os.path.join(model_base_dir, 'eval_results')
-        os.makedirs(eval_dir, exist_ok=True)
-        summary_path = os.path.join(eval_dir, f"summary_{FLAGS.env_name}_sd{FLAGS.seed}_pg{FLAGS.partial_guidance}.json")
-        summary_payload = {
-            str(c): {
-                **all_results[c]['eval_info'],
-                'eval_time': all_results[c]['eval_time'],
-                'num_episodes': all_results[c]['num_episodes'],
+    if FLAGS.save_summary:
+        try:
+            # Save under the model directory: {restore_path or its parent}/eval_results
+            model_base_dir = FLAGS.restore_path if os.path.isdir(FLAGS.restore_path) else os.path.dirname(FLAGS.restore_path)
+            eval_dir = os.path.join(model_base_dir, 'eval_results')
+            os.makedirs(eval_dir, exist_ok=True)
+            summary_path = os.path.join(eval_dir, f"summary_{FLAGS.env_name}_sd{FLAGS.seed}_pg{FLAGS.partial_guidance}.json")
+            summary_payload = {
+                str(c): {
+                    **all_results[c]['eval_info'],
+                    'eval_time': all_results[c]['eval_time'],
+                    'num_episodes': all_results[c]['num_episodes'],
+                }
+                for c in guidance_coeffs
             }
-            for c in guidance_coeffs
-        }
-        with open(summary_path, 'w') as f:
-            json.dump(summary_payload, f, indent=2)
-        print(f"Saved summary metrics to {summary_path}")
-    except Exception as e:
-        print(f"Warning: failed to save summary metrics: {e}")
+            with open(summary_path, 'w') as f:
+                json.dump(summary_payload, f, indent=2)
+            print(f"Saved summary metrics to {summary_path}")
+        except Exception as e:
+            print(f"Warning: failed to save summary metrics: {e}")
     if FLAGS.save_values:
         # Create mapping of coefficient to energy values and save as JSON
         def convert_to_json_serializable(obj):

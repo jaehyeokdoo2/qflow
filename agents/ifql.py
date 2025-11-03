@@ -140,15 +140,16 @@ class IFQLAgent(flax.struct.PyTreeNode):
         actions = jax.random.normal(
             action_seed,
             (
-                *observations.shape[:-1],
                 self.config['num_samples'],
+                *observations.shape[:-1],
                 self.config['action_dim'],
             ),
         )
         n_observations = jnp.repeat(jnp.expand_dims(observations, 0), self.config['num_samples'], axis=0)
         n_orig_observations = jnp.repeat(jnp.expand_dims(orig_observations, 0), self.config['num_samples'], axis=0)
+
         for i in range(self.config['flow_steps']):
-            t = jnp.full((*observations.shape[:-1], self.config['num_samples'], 1), i / self.config['flow_steps'])
+            t = jnp.full((self.config['num_samples'], *observations.shape[:-1], 1), i / self.config['flow_steps'])
             vels = self.network.select('actor_flow')(n_observations, actions, t, is_encoded=True)
             actions = actions + vels / self.config['flow_steps']
         actions = jnp.clip(actions, -1, 1)
@@ -244,13 +245,18 @@ class IFQLAgent(flax.struct.PyTreeNode):
         orig_observations = observations
         if self.config['encoder'] is not None:
             observations = self.network.select('actor_flow_encoder')(observations)
+
+        num_samples = self.config['num_samples']
+
+        if guidance_coeff != 0.0 and partial_guidance != 0:
+            num_samples = 1
         
         # Sample `num_samples` noises and propagate through flow with guidance
         actions = jax.random.normal(
             action_seed,
             (
                 *observations.shape[:-1],
-                self.config['num_samples'],
+                num_samples,
                 self.config['action_dim'],
             ),
         )
@@ -282,12 +288,15 @@ class IFQLAgent(flax.struct.PyTreeNode):
                 energy_grad_fn = None
         
         # Tile observations for multi-candidate approach
-        n_observations = jnp.repeat(jnp.expand_dims(observations, 0), self.config['num_samples'], axis=0)
-        n_orig_observations = jnp.repeat(jnp.expand_dims(orig_observations, 0), self.config['num_samples'], axis=0)
+        n_observations = jnp.repeat(jnp.expand_dims(observations, 0), num_samples, axis=0)
+        n_orig_observations = jnp.repeat(jnp.expand_dims(orig_observations, 0), num_samples, axis=0)
+        vs = self.network.select('value')(n_orig_observations).min(axis=0)
+        
+        # Removed EMA guidance smoothing
         
         # Apply flow steps with conditional guidance
         for i in range(flow_steps):
-            t = jnp.full((*observations.shape[:-1], self.config['num_samples'], 1), i / flow_steps)
+            t = jnp.full((*observations.shape[:-1], num_samples, 1), i / flow_steps)
             
             # Get flow velocity from actor
             vels = self.network.select('actor_flow')(n_observations, actions, t, is_encoded=True)
@@ -299,6 +308,14 @@ class IFQLAgent(flax.struct.PyTreeNode):
                 0.0
             )
 
+            # a_0_t = actions - (1 - t) * vels
+            # a_0_t = jnp.clip(a_0_t, -1, 1)
+            # qs = self.network.select('critic')(n_orig_observations, a_0_t).min(axis=0)
+            # adv = qs - vs
+    
+            # guidance_weight = guidance_weight * jnp.tanh(adv)
+            # guidance_weight = guidance_weight[..., None] # For broadcasting
+
             def apply_guidance():
                 if energy_grad_fn is not None:
                     # Batched gradient computation without vmap
@@ -306,23 +323,22 @@ class IFQLAgent(flax.struct.PyTreeNode):
                     def q_fn_batched(actions_batch):
                         # actions_batch: (num_samples, action_dim)
                         if pred_clean:
-                            a_0 = actions_batch - (1 - t) * vels
-                            a_0 = jnp.clip(a_0, -1, 1)
+                            a_1 = actions_batch + (1 - t) * vels
                         else:
-                            a_0 = actions_batch
-                        qs = self.network.select('critic')(n_observations, a_0)  # (E, num_samples)
+                            a_1 = actions_batch
+                        qs = self.network.select('critic')(n_observations, a_1)  # (E, num_samples)
                         # Sum of min Q-values across samples (scalar)
                         return jnp.sum(jnp.min(qs, axis=0))
                     
                     # Compute gradient w.r.t. entire batch (returns same shape as actions)
                     q_grad = jax.grad(q_fn_batched)(actions)
-                    guidance_grad = q_grad
+                    guidance_grad_raw = q_grad
                     
                     if rescale_strategy == "normalize":
                         # Normalize to match velocity magnitude
-                        guidance_grad = guidance_grad * jnp.linalg.norm(vels, axis=-1, keepdims=True) / (1e-8 + jnp.linalg.norm(guidance_grad, axis=-1, keepdims=True))
+                        guidance_grad_raw = guidance_grad_raw / (1e-8 + jnp.linalg.norm(guidance_grad_raw, axis=-1, keepdims=True))
                     
-                    return guidance_grad, 0.0
+                    return guidance_grad_raw, 0.0
                 else:
                     return jnp.zeros_like(vels), 0.0
             
@@ -336,11 +352,14 @@ class IFQLAgent(flax.struct.PyTreeNode):
                           energy_grad_fn is not None)
             
             # Use JAX conditional
-            guidance_grad, _ = jax.lax.cond(
+            guidance_grad_raw, _ = jax.lax.cond(
                 should_apply,
                 apply_guidance,
                 no_guidance
             )
+            
+            # Use raw guidance gradient without EMA smoothing
+            guidance_grad = guidance_grad_raw
             
             # Check for NaN/Inf
             guidance_grad = jnp.where(
@@ -365,9 +384,223 @@ class IFQLAgent(flax.struct.PyTreeNode):
         
         # Pick action with highest Q-value
         q = self.network.select('critic')(n_orig_observations, actions=actions).min(axis=0)
-        actions = actions[jnp.argmax(q)]
-        
+
+        if guidance_coeff == 0.0 or partial_guidance == 0:
+            # falls back to rejection sampling
+            actions = actions[jnp.argmax(q)]
+        else:
+            action_expectile = 1.0
+            q_sorted_indices = jnp.argsort(q)
+            if action_expectile == 1.0:
+                expectile_idx = q.shape[0] - 1
+            else:
+                expectile_idx = int(action_expectile * (q.shape[0] - 1))
+            chosen_idx = q_sorted_indices[expectile_idx]
+            actions = actions[chosen_idx]
         return actions, energy_vals, gradient_vals, cosine_sim_vals
+
+    # def sample_action_with_guidance(
+    #     self,
+    #     observations,
+    #     energy_fn,
+    #     seed=None,
+    #     guidance_coeff=1.0,
+    #     temperature=1.0,
+    #     partial_guidance=-1,
+    # ):
+    #     """
+    #     Sample actions from the policy with energy-based guidance (FBRAC-style),
+    #     adapted to IFQL's multi-sample generation and action selection.
+    #     """
+    #     # Scheduling and options (matching FBRAC)
+    #     rescale_strategy = "normalize"
+    #     pred_clean = True
+    #     guidance_scheduling = "fixed"
+    #     last_step_guidance = True
+
+    #     if guidance_coeff == 0.0:
+    #         partial_guidance = 0
+
+    #     def get_guidance_strength(i, exp_k=5):
+    #         """Treat the guidance_coeff as max strength"""
+    #         # If guidance_coeff is 0, always return 0 regardless of scheduling
+    #         if guidance_coeff == 0.0:
+    #             return 0.0
+
+    #         min_guidance = 1e-4
+
+    #         if guidance_scheduling == "fixed":
+    #             return guidance_coeff
+    #         elif guidance_scheduling == "linear":
+    #             return min_guidance + (guidance_coeff - min_guidance) * (i + 1) / flow_steps
+    #         elif guidance_scheduling == "exp":
+    #             factor = (jnp.exp((i + 1) * exp_k / flow_steps) - 1) / (jnp.exp(exp_k) - 1)
+    #             return min_guidance + (guidance_coeff - min_guidance) * factor
+    #         else:
+    #             raise ValueError(f"Invalid guidance_scheduling: {guidance_scheduling}")
+
+    #     energy_vals = []
+    #     gradient_vals = []
+    #     cosine_sim_vals = []
+
+    #     # Split seed: one for action sampling, one for guidance
+    #     action_seed, guidance_rng = jax.random.split(seed)
+
+    #     # Handle encoder if needed
+    #     orig_observations = observations
+    #     if self.config["encoder"] is not None:
+    #         observations = self.network.select("actor_flow_encoder")(observations)
+
+    #     # Sample `num_samples` noises and propagate through flow with guidance
+    #     actions = jax.random.normal(
+    #         action_seed,
+    #         (
+    #             *observations.shape[:-1],
+    #             self.config["num_samples"],
+    #             self.config["action_dim"],
+    #         ),
+    #     )
+
+    #     # Determine when to apply guidance (matching FBRAC logic)
+    #     flow_steps = self.config["flow_steps"]
+    #     if partial_guidance == -1:
+    #         guidance_start_step = 0
+    #         guidance_end_step = flow_steps
+    #     elif 0 < partial_guidance < flow_steps:
+    #         if last_step_guidance:
+    #             guidance_start_step = flow_steps - partial_guidance
+    #             guidance_end_step = flow_steps
+    #         else:
+    #             guidance_start_step = 0
+    #             guidance_end_step = partial_guidance
+    #     else:
+    #         guidance_start_step = flow_steps
+    #         guidance_end_step = flow_steps
+    #         print(f"Warning: Invalid partial_guidance value {partial_guidance}. Using no guidance.")
+
+    #     # Pre-compile gradient function
+    #     energy_grad_fn = None
+    #     if guidance_start_step < flow_steps:
+    #         try:
+    #             energy_grad_fn = self._get_energy_grad_fn(energy_fn)
+    #         except Exception as e:
+    #             print(f"Error pre-compiling gradient function: {e}")
+    #             energy_grad_fn = None
+
+    #     # Tile observations for multi-candidate approach
+    #     n_observations = jnp.repeat(jnp.expand_dims(observations, 0), self.config["num_samples"], axis=0)
+    #     n_orig_observations = jnp.repeat(
+    #         jnp.expand_dims(orig_observations, 0), self.config["num_samples"], axis=0
+    #     )
+    #     vs = self.network.select("value")(n_orig_observations).min(axis=0)
+
+    #     # expectile used for final selection; keep consistent with your original
+    #     action_expectile = 0.9
+
+    #     # Apply flow steps with conditional guidance
+    #     for i in range(flow_steps):
+    #         t = jnp.full((*observations.shape[:-1], self.config["num_samples"], 1), i / flow_steps)
+
+    #         # Get flow velocity from actor
+    #         vels = self.network.select("actor_flow")(n_observations, actions, t, is_encoded=True)
+
+    #         # Only compute guidance weight if we might need it
+    #         guidance_weight = jnp.where(guidance_coeff != 0.0, get_guidance_strength(i), 0.0)
+
+    #         def apply_guidance():
+    #             # Use quantile-steering guidance when gradient machinery is available
+    #             if energy_grad_fn is not None:
+    #                 def q_fn_batched(actions_batch):
+    #                     # actions_batch: (..., num_samples, action_dim)
+    #                     if pred_clean:
+    #                         a_0 = actions_batch - (1 - t) * vels
+    #                         a_0 = jnp.clip(a_0, -1, 1)
+    #                     else:
+    #                         a_0 = actions_batch
+
+    #                     qs = self.network.select("critic")(n_observations, a_0)  # (E, num_samples, ...)
+    #                     q_min = jnp.min(qs, axis=0)  # (num_samples, ...)
+
+    #                     # Reduce per-sample to scalar Q by averaging any remaining dims (keeps simple)
+    #                     if q_min.ndim > 1:
+    #                         q_per_sample = jnp.mean(q_min.reshape(q_min.shape[0], -1), axis=1)
+    #                     else:
+    #                         q_per_sample = q_min  # shape (num_samples,)
+
+    #                     # empirical quantile (τ)
+    #                     Q_tau = jnp.quantile(q_per_sample, action_expectile)
+
+    #                     # softness parameter tied to temperature (non-zero)
+    #                     beta_soft = jnp.maximum(1e-6, 10.0 / (temperature + 1e-8))
+
+    #                     # smooth utility focusing on the upper tail
+    #                     u = jax.nn.sigmoid(beta_soft * (q_per_sample - Q_tau))
+
+    #                     # scalar objective: sum utilities
+    #                     return jnp.sum(u)
+
+    #                 # gradient of scalar objective wrt batched actions
+    #                 q_grad = jax.grad(q_fn_batched)(actions)  # same shape as actions
+    #                 guidance_grad = q_grad
+
+    #                 if rescale_strategy == "normalize":
+    #                     # Normalize guidance magnitude to match velocity magnitude
+    #                     guidance_grad = guidance_grad * jnp.linalg.norm(vels, axis=-1, keepdims=True) / (
+    #                         1e-8 + jnp.linalg.norm(guidance_grad, axis=-1, keepdims=True)
+    #                     )
+
+    #                 return guidance_grad, 0.0
+    #             else:
+    #                 return jnp.zeros_like(vels), 0.0
+
+    #         def no_guidance():
+    #             return jnp.zeros_like(vels), 0.0
+
+    #         # Check if we should apply guidance
+    #         should_apply = (
+    #             guidance_coeff != 0.0
+    #             and i >= guidance_start_step
+    #             and i < guidance_end_step
+    #             and energy_grad_fn is not None
+    #         )
+
+    #         # Use JAX conditional
+    #         guidance_grad, _ = jax.lax.cond(should_apply, apply_guidance, no_guidance)
+
+    #         # Check for NaN/Inf and clip
+    #         guidance_grad = jnp.where(jnp.isnan(guidance_grad) | jnp.isinf(guidance_grad), 0.0, guidance_grad)
+    #         guidance_grad = jnp.clip(guidance_grad, -1, 1)
+
+    #         # record placeholders for diagnostics (kept simple)
+    #         gradient_vals.append(0.0)
+    #         cosine_sim_vals.append(0.0)
+
+    #         # Only apply guidance weight if we should apply guidance
+    #         effective_guidance_weight = jnp.where(should_apply, guidance_weight, 0.0)
+    #         guided_vels = vels + effective_guidance_weight * guidance_grad
+
+    #         # Update actions
+    #         actions = actions + guided_vels / flow_steps
+    #         energy_vals.append(0.0)
+
+    #     actions = jnp.clip(actions, -1, 1)
+
+    #     # Pick action with highest Q-value or the chosen expectile
+    #     q = self.network.select("critic")(n_orig_observations, actions=actions).min(axis=0)
+    #     # actions = actions[jnp.argmax(q)]
+
+    #     if guidance_coeff == 0.0 or partial_guidance == 0:
+    #         # falls back to rejection sampling
+    #         actions = actions[jnp.argmax(q)]
+    #     else:
+    #         q_sorted_indices = jnp.argsort(q)
+    #         if action_expectile == 1.0:
+    #             expectile_idx = q.shape[0] - 1
+    #         else:
+    #             expectile_idx = int(action_expectile * (q.shape[0] - 1))
+    #         chosen_idx = q_sorted_indices[expectile_idx]
+    #         actions = actions[chosen_idx]
+    #     return actions, energy_vals, gradient_vals, cosine_sim_vals
 
     @classmethod
     def create(

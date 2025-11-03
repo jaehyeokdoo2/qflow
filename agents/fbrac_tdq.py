@@ -9,22 +9,22 @@ import optax
 
 from utils.encoders import encoder_modules
 from utils.flax_utils import ModuleDict, TrainState, nonpytree_field
-from utils.networks import ActorVectorField, Value
+from utils.networks import ActorVectorField, Value, TimeDependentValue
 
 # Global cache for compiled gradient functions
 _COMPILED_GRAD_FNS = {}
 
 
-class FBRACAgent(flax.struct.PyTreeNode):
-    """Flow Q-learning agent with BPTT."""
+class FBRAC_TDQAgent(flax.struct.PyTreeNode):
+    """Flow Q-learning agent with BPTT and time-dependent value function."""
 
     rng: Any
     network: Any
     config: Any = nonpytree_field()
 
     def critic_loss(self, batch, grad_params, rng):
-        """Compute the FQL critic loss."""
-        rng, sample_rng = jax.random.split(rng)
+        """Compute the critic loss with time-dependent value function."""
+        rng, sample_rng, x_rng, t_rng = jax.random.split(rng, 4)
         next_actions = self.sample_actions(batch['next_observations'], seed=sample_rng)
         next_actions = jnp.clip(next_actions, -1, 1)
 
@@ -39,17 +39,81 @@ class FBRACAgent(flax.struct.PyTreeNode):
         q = self.network.select('critic')(batch['observations'], actions=batch['actions'], params=grad_params)
         critic_loss = jnp.square(q - target_q).mean()
 
-        return critic_loss, {
+        # === 2. Anchor Loss (Q_t at t=1) ===
+        # Q_t(s, a, 1.0) should match the stable Q(s, a)
+        # Your convention has clean data at t=1
+        q_t_1 = self.network.select('time_dependent_critic')(
+            batch['observations'], 
+            actions=batch['actions'], 
+            times=jnp.full((*batch['observations'].shape[:-1], 1), 1.0), # Use 1.0 for clean
+            params=grad_params
+        )
+        # Use stop_gradient on 'q' so we only train Q_t, not Q
+        q_t_anchor_loss = jnp.square(q_t_1 - jax.lax.stop_gradient(q)).mean() 
+
+        # === 3. Q_t Consistency Loss (for t < 1) ===
+        batch_size, action_dim = batch['actions'].shape
+        
+        # A. Get noisy action x_t
+        x_0_noise = jax.random.normal(x_rng, (batch_size, action_dim)) # Noise at t=0
+        x_1_data = batch['actions']                                   # Data at t=1
+        
+        # Sample t in [0, 1-dt] to avoid t_denoised > 1
+        dt = 1.0 / self.config.get('diffusion_steps', 100) # Define your step size
+        t = jax.random.uniform(t_rng, (batch_size, 1), minval=0.0, maxval=1.0 - dt) 
+        x_t = (1 - t) * x_0_noise + t * x_1_data                      # Interpolate to get x_t
+
+        # B. Denoise x_t by one step (dt) using the target actor
+        # This is a FORWARD Euler step from t to t+dt
+        vel = self.network.select('actor_bc_flow')(
+            batch['observations'], x_t, t, is_encoded=True
+        )
+        x_t_denoised = x_t + vel * dt # Denoised state at t+dt
+        t_denoised = t + dt                # Denoised time
+
+        # C. Get the consistency target: Q_t_target(s, x_{t+dt}, t+dt)
+        target_q_t = self.network.select('target_time_dependent_critic')(
+            batch['observations'], 
+            actions=jax.lax.stop_gradient(x_t_denoised), 
+            times=jax.lax.stop_gradient(t_denoised)
+        )
+        if self.config['q_agg'] == 'min':
+            target_q_t = target_q_t.min(axis=0)
+        else:
+            target_q_t = target_q_t.mean(axis=0)
+        target_q_t = jax.lax.stop_gradient(target_q_t)
+
+        # D. Get the current Q_t prediction: Q_t(s, x_t, t)
+        current_q_t = self.network.select('time_dependent_critic')(
+            batch['observations'], 
+            actions=x_t, 
+            times=t, 
+            params=grad_params
+        )
+
+        # E. Calculate the consistency loss
+        q_t_consistency_loss = jnp.square(current_q_t - target_q_t).mean()
+
+        # === 4. Total Combined Loss ===
+        # This loss will update parameters for both 'critic' and 'time_dependent_critic'
+        total_critic_loss = critic_loss + q_t_anchor_loss + q_t_consistency_loss
+
+        return total_critic_loss, {
             'critic_loss': critic_loss,
+            'q_t_anchor_loss': q_t_anchor_loss,
+            'q_t_consistency_loss': q_t_consistency_loss,
+            'total_critic_loss': total_critic_loss,
             'q_mean': q.mean(),
-            'q_max': q.max(),
-            'q_min': q.min(),
+            'q_t_1_mean': q_t_1.mean(),
+            'q_t_current_mean': current_q_t.mean(),
+            'q_t_target_mean': target_q_t.mean(),
         }
 
     def actor_loss(self, batch, grad_params, rng):
         """Compute the FQL actor loss."""
         batch_size, action_dim = batch['actions'].shape
         rng, x_rng, t_rng, support_noise_rng = jax.random.split(rng, 4)
+
 
         if self.config['encoder'] is not None:
             observations = self.network.select('actor_bc_flow_encoder')(batch['observations'])
@@ -70,29 +134,56 @@ class FBRACAgent(flax.struct.PyTreeNode):
         rng, noise_rng = jax.random.split(rng)
         noises = jax.random.normal(noise_rng, (batch_size, action_dim))
         actor_actions = noises
+
+        # Policy extraction with Q_t
+        # Re-sample inter_i to be in the correct range [0, T-2]
+        inter_i = jax.random.randint(t_rng, (batch_size, 1), 0, self.config['flow_steps'] - 1)
         
+        inter_actions = jnp.zeros_like(actor_actions)
+
         # action sampling over flow steps
         for i in range(self.config['flow_steps']):
             t = jnp.full((*observations.shape[:-1], 1), i / self.config['flow_steps'])
             vels = self.network.select('actor_bc_flow')(observations, actor_actions, t, is_encoded=True, params=grad_params)
             actor_actions = actor_actions + vels / self.config['flow_steps']
+            
+            # Extract the actions at the intermediate timestep for each sample
+            mask = (inter_i == i).astype(actor_actions.dtype)
+            
+            # Store actor_actions (which is a_{i+1}) when mask is true
+            inter_actions = mask * actor_actions + (1 - mask) * inter_actions
+
         actor_actions = jnp.clip(actor_actions, -1, 1)
         qs = self.network.select('critic')(batch['observations'], actions=actor_actions)
         q = jnp.mean(qs, axis=0)
 
         q_loss = -q.mean()
+
+        # Q_t loss
+        q_ts = self.network.select(
+            'time_dependent_critic')(batch['observations'], 
+            actions=inter_actions, 
+            # The action is at step i+1, so the time is (i+1)/T
+            times=jnp.full((*observations.shape[:-1], 1), (inter_i + 1) / self.config['flow_steps']))
+        
+        q_t = jnp.mean(q_ts, axis=0)
+        q_t_loss = -q_t.mean()
+
+
         if self.config['normalize_q_loss']:
             lam = jax.lax.stop_gradient(1 / jnp.abs(q).mean())
             q_loss = lam * q_loss
 
         # Total loss.
-        actor_loss = self.config['alpha'] * bc_flow_loss + q_loss
+        actor_loss = self.config['alpha'] * bc_flow_loss + q_loss + self.config['q_t_weight'] * q_t_loss
 
         return actor_loss, {
             'actor_loss': actor_loss,
             'bc_flow_loss': bc_flow_loss,
             'q_loss': q_loss,
             'q': q.mean(),
+            'q_t': q_t.mean(),
+            'q_t_loss': q_t_loss,
         }
 
 
@@ -134,6 +225,7 @@ class FBRACAgent(flax.struct.PyTreeNode):
 
         new_network, info = self.network.apply_loss_fn(loss_fn=loss_fn)
         self.target_update(new_network, 'critic')
+        self.target_update(new_network, 'time_dependent_critic')
 
         return self.replace(network=new_network, rng=new_rng), info
 
@@ -192,60 +284,6 @@ class FBRACAgent(flax.struct.PyTreeNode):
         
         return _COMPILED_GRAD_FNS[energy_fn_id]
 
-    def rejection_sample_actions(
-        self,
-        observations,
-        seed=None,
-        temperature=1.0,
-        select_quantile=1.0,
-    ):
-        """ Rejection sampling used in IDQL"""
-        orig_observations = observations
-        action_seed, noise_seed = jax.random.split(seed)
-        
-        noises = jax.random.normal(
-            action_seed,
-            (
-                *observations.shape[:-1],
-                self.config['num_samples'],
-                self.config['action_dim'],
-            ),
-        )
-        n_observations = jnp.repeat(jnp.expand_dims(observations, 0), self.config['num_samples'], axis=0)
-        n_orig_observations = jnp.repeat(jnp.expand_dims(orig_observations, 0), self.config['num_samples'], axis=0)
-        actions = noises
-
-        one_step = False
-
-        if one_step:
-            t = jnp.full((*observations.shape[:-1], self.config['num_samples'], 1), 0.0)
-            vels = self.network.select('actor_bc_flow')(n_observations, actions, t, is_encoded=True)
-            actions = actions + vels
-        else:
-            for i in range(self.config['flow_steps']):
-                t = jnp.full((*observations.shape[:-1], self.config['num_samples'], 1), i / self.config['flow_steps'])
-                vels = self.network.select('actor_bc_flow')(n_observations, actions, t, is_encoded=True)
-                actions = actions + vels / self.config['flow_steps']
-        actions = jnp.clip(actions, -1, 1)
-
-        # Pick the action with the highest Q-value.
-        q = self.network.select('critic')(n_orig_observations, actions=actions)
-        if self.config['q_agg'] == 'min':
-            q = q.min(axis=0)
-        else:
-            q = q.mean(axis=0)
-
-        if select_quantile == 1.0:
-            actions = actions[jnp.argmax(q)]
-        else:
-            q_sorted_indices = jnp.argsort(q)
-            select_idx = int(select_quantile * (q.shape[0] - 1))
-            chosen_idx = q_sorted_indices[select_idx]
-            actions = actions[chosen_idx]
-
-        return actions
-        
-
     def sample_action_with_guidance(
         self,
         observations,
@@ -288,8 +326,6 @@ class FBRACAgent(flax.struct.PyTreeNode):
 
             if guidance_scheduling == "fixed":
                 return guidance_coeff
-            elif guidance_scheduling == "neg_linear": # start from guidance_coeff and decrease linearly
-                return guidance_coeff - (guidance_coeff - min_guidance) * (i+1) / flow_steps
             elif guidance_scheduling == "linear":
                 return min_guidance + (guidance_coeff - min_guidance) * (i+1) / flow_steps
             elif guidance_scheduling == "exp":
@@ -311,8 +347,6 @@ class FBRACAgent(flax.struct.PyTreeNode):
             ),
         )
         actions = noises
-        # Initialize EMA for guidance gradient smoothing
-        ema_guidance = jnp.zeros_like(actions)
         
         # Determine when to apply guidance based on partial_guidance and last_step_guidance parameters
         flow_steps = self.config['flow_steps']
@@ -364,11 +398,11 @@ class FBRACAgent(flax.struct.PyTreeNode):
                     def q_fn_at_target(a_t):
                         if pred_clean:
                             # Compute target_actions from a_t
-                            a_1 = a_t + (1 - t) * vels
-                            a_1 = jnp.clip(a_1, -1, 1)
+                            a_0 = a_t - (1 - t) * vels
+                            a_0 = jnp.clip(a_0, -1, 1)
                         else:
-                            a_1 = a_t
-                        qs = self.network.select('critic')(observations, a_1)
+                            a_0 = a_t
+                        qs = self.network.select('critic')(observations, a_0)
                         return jnp.mean(qs)
                     
                     q_grad = jax.grad(q_fn_at_target)(actions)  # Gradient w.r.t. a_t
@@ -377,7 +411,8 @@ class FBRACAgent(flax.struct.PyTreeNode):
                     guidance_grad = q_grad
 
                     if rescale_strategy == "normalize":
-                        guidance_grad = guidance_grad / (1e-8 + jnp.linalg.norm(guidance_grad))
+                        # normalize
+                        guidance_grad = guidance_grad * jnp.linalg.norm(vels) / (1e-8 + jnp.linalg.norm(guidance_grad))
                     
                     return guidance_grad, 0.0
                 else:
@@ -391,36 +426,6 @@ class FBRACAgent(flax.struct.PyTreeNode):
                           i >= guidance_start_step and 
                           i < guidance_end_step and
                           energy_grad_fn is not None)
-
-                          
-            # Use JAX conditional to choose guidance or no guidance
-            # guidance_grad_raw, _ = jax.lax.cond(
-            #     should_apply,
-            #     apply_guidance,
-            #     no_guidance
-            # )
-            
-            # Exponential Moving Average smoothing
-            # beta_t = 0.3 + (0.9 - 0.3) * (i / flow_steps)
-            # ema_guidance = beta_t * ema_guidance + (1 - beta_t) * guidance_grad_raw
-            
-            # # Blend raw gradient with EMA
-            # rho = 0.5  # 0.3-0.7 works well
-            # guidance_grad = (1 - rho) * guidance_grad_raw + rho * ema_guidance
-            
-            # # Check for NaN/Inf in guidance gradient
-            # guidance_grad = jnp.where(
-            #     jnp.isnan(guidance_grad) | jnp.isinf(guidance_grad),
-            #     0.0,
-            #     guidance_grad
-            # )
-            # guidance_grad = jnp.clip(guidance_weight*guidance_grad, -1, 1)
-            # gradient_vals.append(guidance_grad)
-            # cosine_sim_vals.append(0.0)
-            # guided_vels = vels + guidance_grad
-            
-            # # Update actions
-            # actions = actions + guided_vels / flow_steps
             
             # Use JAX conditional to choose guidance or no guidance
             guidance_grad, _ = jax.lax.cond(
@@ -443,7 +448,7 @@ class FBRACAgent(flax.struct.PyTreeNode):
             
             # Update actions
             actions = actions + guided_vels / flow_steps
-
+            # energy_val = energy_fn(observations, actions)
             energy_vals.append(0.0)
         
         actions = jnp.clip(actions, -1, 1)
@@ -486,6 +491,12 @@ class FBRACAgent(flax.struct.PyTreeNode):
             num_ensembles=2,
             encoder=encoders.get('critic'),
         )
+        time_dependent_critic_def = TimeDependentValue(
+            hidden_dims=config['value_hidden_dims'],
+            layer_norm=config['layer_norm'],
+            num_ensembles=2,
+            encoder=encoders.get('time_dependent_critic'),
+        )
         actor_bc_flow_def = ActorVectorField(
             hidden_dims=config['actor_hidden_dims'],
             action_dim=action_dim,
@@ -496,7 +507,9 @@ class FBRACAgent(flax.struct.PyTreeNode):
         network_info = dict(
             critic=(critic_def, (ex_observations, ex_actions)),
             target_critic=(copy.deepcopy(critic_def), (ex_observations, ex_actions)),
-            actor_bc_flow=(actor_bc_flow_def, (ex_observations, ex_actions, ex_times)),
+            time_dependent_critic=(time_dependent_critic_def, (ex_observations, ex_actions, ex_times)),
+            target_time_dependent_critic=(copy.deepcopy(time_dependent_critic_def), (ex_observations, ex_actions, ex_times)),
+            actor_bc_flow=(actor_bc_flow_def, (ex_observations, ex_actions, ex_times))
         )
         if encoders.get('actor_bc_flow') is not None:
             # Add actor_bc_flow_encoder to ModuleDict to make it separately callable.
@@ -511,7 +524,7 @@ class FBRACAgent(flax.struct.PyTreeNode):
 
         params = network.params
         params['modules_target_critic'] = params['modules_critic']
-
+        params['modules_target_time_dependent_critic'] = params['modules_time_dependent_critic']
         config['ob_dims'] = ob_dims
         config['action_dim'] = action_dim
         return cls(rng, network=network, config=flax.core.FrozenDict(**config))
@@ -520,7 +533,7 @@ class FBRACAgent(flax.struct.PyTreeNode):
 def get_config():
     config = ml_collections.ConfigDict(
         dict(
-            agent_name='fbrac',  # Agent name.
+            agent_name='fbrac_tdq',  # Agent name.
             ob_dims=ml_collections.config_dict.placeholder(list),  # Observation dimensions (will be set automatically).
             action_dim=ml_collections.config_dict.placeholder(int),  # Action dimension (will be set automatically).
             lr=3e-4,  # Learning rate.
@@ -537,7 +550,7 @@ def get_config():
             normalize_q_loss=False,  # Whether to normalize the Q loss.
             reward_scale=1.0,  # Reward scale.
             encoder=ml_collections.config_dict.placeholder(str),  # Visual encoder name (None, 'impala_small', etc.).
-            num_samples=32, # Number of action samples for rejection sampling
+            q_t_weight=1.0,  # Weight for the Q_t loss.
         )
     )
     return config

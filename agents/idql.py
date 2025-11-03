@@ -267,9 +267,9 @@ class IDQLAgent(flax.struct.PyTreeNode):
             else:
                 raise ValueError(f"Invalid guidance_scheduling: {guidance_scheduling}")
 
-        energy_vals = []
         gradient_vals = []
-        cosine_sim_vals = []
+        q_vals = []
+        v_vals = []
 
         seed, action_seed = jax.random.split(seed)
 
@@ -279,41 +279,57 @@ class IDQLAgent(flax.struct.PyTreeNode):
             observations = self.network.select('actor_diffusion_encoder')(observations)
 
         # Multi-candidate action tensor: (B, S, A)
+        # Sample only 1 action if guidance is to be applied (matching IFQL logic)
+        num_samples = self.config['num_samples']
+        if guidance_coeff != 0.0 and partial_guidance != 0:
+            num_samples = 1
+            
         actions = jax.random.normal(
             action_seed,
             (
                 *observations.shape[:-1],
-                self.config['num_samples'],
+                num_samples,
                 self.config['action_dim'],
             ),
         )
 
+        diffusion_steps = self.config['diffusion_steps']
+
+        # Determine guidance start/end in forward indexing
         if partial_guidance == -1:
             guidance_start_step = 0
             guidance_end_step = diffusion_steps
         elif 0 < partial_guidance < diffusion_steps:
-            if last_step_guidance:
-                guidance_start_step = diffusion_steps - partial_guidance
-                guidance_end_step = diffusion_steps
-            else:
-                guidance_start_step = 0
-                guidance_end_step = partial_guidance
+            # Apply guidance only to last {partial_guidance} steps
+            guidance_start_step = 0
+            guidance_end_step = partial_guidance
         else:
-            guidance_start_step = diffusion_steps
-            guidance_end_step = diffusion_steps
+            guidance_start_step = 0
+            guidance_end_step = 0
             print(f"Warning: Invalid partial_guidance value {partial_guidance}. Using no guidance.")
+        
+        # Pre-compile the gradient function once for better performance (only if we'll use guidance)
+        energy_grad_fn = None
+        if guidance_end_step > 0:
+            try:
+                energy_grad_fn = self._get_energy_grad_fn(energy_fn)
+            except Exception as e:
+                print(f"Error pre-compiling gradient function: {e}")
+                energy_grad_fn = None
 
         # Tile observations to (num_samples, obs_dim) for network calls (matching sample_actions)
-        n_observations = jnp.repeat(jnp.expand_dims(observations, 0), self.config['num_samples'], axis=0)
-        n_orig_observations = jnp.repeat(jnp.expand_dims(orig_observations, 0), self.config['num_samples'], axis=0)
+        n_observations = jnp.repeat(jnp.expand_dims(observations, 0), num_samples, axis=0)
+        n_orig_observations = jnp.repeat(jnp.expand_dims(orig_observations, 0), num_samples, axis=0)
+        vs = self.network.select('value')(n_orig_observations).min(axis=0)
 
         # Diffusion sampling with conditional guidance
         for i in range(diffusion_steps)[::-1]:  # FIXED: Reverse order (T-1 → 0)
-            t = jnp.full((*observations.shape[:-1], self.config['num_samples'], 1), i / diffusion_steps)
-            t_int = jnp.full((*observations.shape[:-1], self.config['num_samples'], 1), i)
+            t = jnp.full((*observations.shape[:-1], num_samples, 1), i / diffusion_steps)
+            t_int = jnp.full((*observations.shape[:-1], num_samples, 1), i)
 
             betas = self.extract(self.betas, t_int, actions.shape)
             sqrt_alphas = self.extract(self.sqrt_alphas, t_int, actions.shape)
+            sqrt_alphas_cumprod = self.extract(self.sqrt_alphas_cumprod, t_int, actions.shape)
             sqrt_one_minus_alphas_cumprod = self.extract(self.sqrt_one_minus_alphas_cumprod, t_int, actions.shape)
 
             preds = self.network.select('actor_diffusion')(n_observations, actions, t, is_encoded=True)
@@ -331,6 +347,14 @@ class IDQLAgent(flax.struct.PyTreeNode):
                 0.0
             )
 
+            # a_0_t = (actions - sqrt_one_minus_alphas_cumprod * preds) / sqrt_alphas
+            # a_0_t = jnp.clip(a_0_t, -1, 1)
+            # qs = self.network.select('critic')(n_orig_observations, a_0_t).min(axis=0)
+            # adv = qs - vs
+    
+            # guidance_weight = guidance_weight * jnp.tanh(adv)
+            # guidance_weight = guidance_weight[..., None] # For broadcasting
+
             # Don't add noise in the final step (i=0)
             noise_scale = jnp.where(i > 0, jnp.sqrt(betas), 0.0)
             
@@ -338,8 +362,8 @@ class IDQLAgent(flax.struct.PyTreeNode):
                 def q_fn_batched(actions_batch):
                     # actions_batch: (num_samples, action_dim)
                     if pred_clean:
-                        # Compute a_0 from a_t
-                        a_0 = (actions_batch - sqrt_one_minus_alphas_cumprod * preds) / sqrt_alphas
+                        # Compute a_0 from a_t (matching DQL formula)
+                        a_0 = (actions_batch - sqrt_one_minus_alphas_cumprod * preds) / sqrt_alphas_cumprod
                         a_0 = jnp.clip(a_0, -1, 1)
                     else:
                         a_0 = actions_batch
@@ -358,10 +382,10 @@ class IDQLAgent(flax.struct.PyTreeNode):
             def no_guidance():
                 return jnp.zeros_like(preds), 0.0
             
-            # Check if we should apply guidance
-            should_apply = (guidance_coeff != 0.0 and 
-                            i >= guidance_start_step and 
-                            i < guidance_end_step)
+            should_apply = (guidance_coeff != 0.0 and
+                            i >= guidance_start_step and
+                            i < guidance_end_step and
+                            energy_grad_fn is not None)
 
             # Use JAX conditional
             guidance_grad, _ = jax.lax.cond(
@@ -376,25 +400,40 @@ class IDQLAgent(flax.struct.PyTreeNode):
                 0.0,
                 guidance_grad
             )
-            guidance_grad = jnp.clip(guidance_grad, -1, 1)
-
-            gradient_vals.append(0.0)
-            cosine_sim_vals.append(0.0)
 
             effective_guidance_weight = jnp.where(should_apply, guidance_weight, 0.0)
-            guided_preds = preds + effective_guidance_weight * guidance_grad
+            guidance_grad = jnp.clip(effective_guidance_weight * guidance_grad, -1, 1)
 
-            # Update actions with guided score
-            actions = actions / sqrt_alphas - betas / (sqrt_alphas * sqrt_one_minus_alphas_cumprod) * guided_preds + noise_scale * step_noise
-            energy_vals.append(0.0)
+            gradient_vals.append(guidance_grad)
+
+            # # Update actions with guided score
+            # actions = actions / sqrt_alphas - betas / (sqrt_alphas * sqrt_one_minus_alphas_cumprod) * guided_preds + noise_scale * step_noise
+
+            guided_preds = preds - guidance_grad
+            actions_guided = actions / sqrt_alphas - betas / (sqrt_alphas * sqrt_one_minus_alphas_cumprod) * guided_preds
+            
+            actions = actions_guided + noise_scale * step_noise
 
         actions = jnp.clip(actions, -1, 1)
 
         # Pick best action per batch by Q over candidates
         q = self.network.select('critic')(n_orig_observations, actions=actions).min(axis=0)
-        actions = actions[jnp.argmax(q)]
+        
+        if guidance_coeff == 0.0 or partial_guidance == 0:
+            # falls back to rejection sampling (select best action)
+            actions = actions[jnp.argmax(q)]
+        else:
+            # Use expectile selection when guidance is applied
+            action_expectile = 1.0
+            q_sorted_indices = jnp.argsort(q)
+            expectile_idx = int(action_expectile * (q.shape[0] - 1))
+            chosen_idx = q_sorted_indices[expectile_idx]
+            actions = actions[chosen_idx]
 
-        return actions, energy_vals, gradient_vals, cosine_sim_vals
+        q_vals.append(q)
+        v_vals.append(vs)
+
+        return actions, q_vals, gradient_vals, v_vals
 
     def extract(self, a, t, x_shape):
         """

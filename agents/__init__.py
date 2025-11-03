@@ -13,6 +13,8 @@ from agents.fql_separate import FQLSeparateAgent
 from agents.lyapunov_fbrac import LyapunovFBRACAgent
 from agents.dql import DQLAgent
 from agents.idql import IDQLAgent
+from agents.fbrac_tdq import FBRAC_TDQAgent
+from agents.dql_tdq import DQL_TDQAgent
 
 agents = dict(
     fql=FQLAgent,
@@ -30,4 +32,6 @@ agents = dict(
     lyapunov_fbrac=LyapunovFBRACAgent,
     dql=DQLAgent,
     idql=IDQLAgent,
+    fbrac_tdq=FBRAC_TDQAgent,
+    dql_tdq=DQL_TDQAgent,
 )

@@ -7,8 +7,8 @@ task_idx=${1:-1}
 
 # Environment settings
 env_name="antmaze-large-navigate-singletask-task${task_idx}-v0"
-env_name="humanoidmaze-medium-navigate-singletask-task${task_idx}-v0"
-env_name="antsoccer-arena-navigate-singletask-task${task_idx}-v0"
+# env_name="humanoidmaze-medium-navigate-singletask-task${task_idx}-v0"
+# env_name="antsoccer-arena-navigate-singletask-task${task_idx}-v0"
 
 # Training hyperparameters
 offline_steps=1000000
@@ -17,20 +17,22 @@ save_interval=$offline_steps
 expectile=0.9
 num_samples=32
 diffusion_steps=10
-reward_discount=0.995
+reward_discount=0.99
 use_value_layer_norm=true
 use_actor_layer_norm=false
+
+save_summary=false
+save_values=false
 
 # Evaluation settings
 lyapunov_model_path="/mnt/nas/jaehyeok/fql/exp/lyapunov/LyapunovTraining/lyapunov_antmaze-large-navigate-singletask-task1-v0_sd000_20250916_202904"
 lyapunov_model_path="/mnt/nas/jaehyeok/fql/exp/lyapunov/LyapunovTraining/lyapunov_humanoidmaze-medium-navigate-singletask-task1-v0_sd000_20250916_200152"
 lyapunov_model_step="1000000"
-guidance_coeffs="0.0,0.001,0.01,0.1,0.5,1.0"
+guidance_coeffs="0.1,0.5,1.0"
 eval_episodes=50
 
-
-start_seed=1
-end_seed=7
+start_seed=0
+end_seed=0
 for seed in $(seq $start_seed $end_seed); do
 
     # Build experiment name
@@ -54,22 +56,22 @@ for seed in $(seq $start_seed $end_seed); do
     # Step 1: Training
     echo ""
     echo "Step 1: Training..."
-    python main.py \
-        --seed=$seed \
-        --eval_interval=$eval_interval \
-        --offline_steps=$offline_steps \
-        --save_interval=$save_interval \
-        --env_name=$env_name \
-        --save_dir=$base_dir \
-        --run_group=$run_group \
-        --exp_name=$exp_name \
-        --agent=agents/idql.py \
-        --agent.expectile=$expectile \
-        --agent.num_samples=$num_samples \
-        --agent.diffusion_steps=$diffusion_steps \
-        --agent.discount=$reward_discount \
-        --agent.layer_norm=$use_value_layer_norm \
-        --agent.actor_layer_norm=$use_actor_layer_norm
+    # python main.py \
+    #     --seed=$seed \
+    #     --eval_interval=$eval_interval \
+    #     --offline_steps=$offline_steps \
+    #     --save_interval=$save_interval \
+    #     --env_name=$env_name \
+    #     --save_dir=$base_dir \
+    #     --run_group=$run_group \
+    #     --exp_name=$exp_name \
+    #     --agent=agents/idql.py \
+    #     --agent.expectile=$expectile \
+    #     --agent.num_samples=$num_samples \
+    #     --agent.diffusion_steps=$diffusion_steps \
+    #     --agent.discount=$reward_discount \
+    #     --agent.layer_norm=$use_value_layer_norm \
+    #     --agent.actor_layer_norm=$use_actor_layer_norm
 
     echo ""
     echo "Training completed!"
@@ -102,6 +104,8 @@ for seed in $(seq $start_seed $end_seed); do
         --guidance_coeffs="$guidance_coeffs" \
         --partial_guidance="$partial_guidance" \
         --seed="$seed" \
+        --save_summary="$save_summary" \
+        --save_values="$save_values" \ 
         2>&1 | tee "$eval_dir/evaluation.log"
     done
 

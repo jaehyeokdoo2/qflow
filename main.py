@@ -191,7 +191,16 @@ def main(_):
             train_metrics['time/total_time'] = time.time() - first_time
             train_metrics.update(expl_metrics)
             last_time = time.time()
-            wandb.log(train_metrics, step=i)
+            
+            # Filter out NaN/Inf values before logging to wandb
+            filtered_metrics = {}
+            for k, v in train_metrics.items():
+                if isinstance(v, (int, float)) and (np.isfinite(v) and not np.isnan(v)):
+                    filtered_metrics[k] = v
+                else:
+                    print(f"Warning: Skipping metric {k} with value {v} (NaN/Inf)")
+            
+            wandb.log(filtered_metrics, step=i)
             train_logger.log(train_metrics, step=i)
 
         # Evaluate agent.

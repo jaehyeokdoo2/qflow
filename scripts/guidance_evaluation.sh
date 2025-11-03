@@ -6,7 +6,7 @@
 # Set default values
 # ENV_NAME="humanoidmaze-medium-navigate-singletask-task3-v0"
 ENV_NAME="antmaze-large-navigate-singletask-task1-v0"
-AGENT_NAME="dql"
+AGENT_NAME="idql"
 RESTORE_EPOCH="1000000"
 LYAPUNOV_HIDDEN_DIMS="512,512,512"
 LYAPUNOV_LATENT_DIM=16
