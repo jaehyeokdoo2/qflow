@@ -14,7 +14,7 @@ else
 fi
 
 for task_idx in $(seq $start_task_idx $end_task_idx); do
-    echo "Running IFQL for task ${task_idx}"
+    echo "Running FAWAC for task ${task_idx}"
     echo "=========================================="
     echo ""
 
@@ -31,10 +31,10 @@ for task_idx in $(seq $start_task_idx $end_task_idx); do
     # env_name="puzzle-4x4-play-singletask-task${task_idx}-v0"
 
     env_name="antmaze-umaze-v2"
-    env_name="antmaze-umaze-diverse-v2"
-    env_name="antmaze-medium-play-v2"
-    env_name="antmaze-medium-diverse-v2"
-    env_name="antmaze-large-play-v2"
+    # env_name="antmaze-umaze-diverse-v2"
+    # env_name="antmaze-medium-play-v2"
+    # env_name="antmaze-medium-diverse-v2"
+    # env_name="antmaze-large-play-v2"
     env_name="antmaze-large-diverse-v2"
 
     # env_name="antmaze-giant-stitch-singletask-task${task_idx}-v0"
@@ -51,8 +51,8 @@ for task_idx in $(seq $start_task_idx $end_task_idx); do
     layer_width=256 # D4RL: 256
     discount=0.99
     tau=0.005
-    expectile=0.9
-    num_samples=32
+    inv_temp=3
+    q_agg="mean"
 
     # Seeds to run
     if [ "$DEBUG" = "true" ]; then
@@ -64,14 +64,14 @@ for task_idx in $(seq $start_task_idx $end_task_idx); do
 
     for seed in $seeds; do
         run_group=${env_name}
-        base_dir="ifql-reproduce"
+        base_dir="fawac-reproduce"
 
         if [ "$offline_steps" = "2000000" ]; then
             base_dir="${base_dir}_scale"
         fi
 
         echo "=========================================="
-        echo "IFQL"
+        echo "FAWAC"
         echo "=========================================="
         echo "Task: ${task_idx}"
         echo "Seed: ${seed}"
@@ -88,14 +88,14 @@ for task_idx in $(seq $start_task_idx $end_task_idx); do
             --save_dir=$base_dir \
             --run_group=$run_group \
             --eval_init_noise=false \
-            --agent=agents/ifql.py \
+            --agent=agents/fawac.py \
             --agent.flow_steps=$flow_steps \
             --agent.batch_size=$batch_size \
             --agent.value_hidden_dims="${layer_width},${layer_width},${layer_width},${layer_width}" \
             --agent.actor_hidden_dims="${layer_width},${layer_width},${layer_width},${layer_width}" \
             --agent.discount=$discount \
             --agent.tau=$tau \
-            --agent.expectile=$expectile \
-            --agent.num_samples=$num_samples
+            --agent.inv_temp=$inv_temp \
+            --agent.q_agg=$q_agg
     done
 done
