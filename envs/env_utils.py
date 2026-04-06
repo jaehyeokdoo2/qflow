@@ -116,6 +116,14 @@ def make_env_and_datasets(env_name, frame_stack=None, action_clip_eps=1e-5):
         eval_env = d4rl_utils.make_env(env_name)
         dataset = d4rl_utils.get_dataset(env, env_name)
         train_dataset, val_dataset = dataset, None
+    elif 'hopper' in env_name or 'walker2d' in env_name or 'halfcheetah' in env_name:
+        # D4RL Locomotion.
+        from envs import d4rl_utils
+
+        env = d4rl_utils.make_env(env_name)
+        eval_env = d4rl_utils.make_env(env_name)
+        dataset = d4rl_utils.get_dataset(env, env_name)
+        train_dataset, val_dataset = dataset, None
     elif 'pen' in env_name or 'hammer' in env_name or 'relocate' in env_name or 'door' in env_name:
         # D4RL Adroit.
         import d4rl.hand_manipulation_suite  # noqa

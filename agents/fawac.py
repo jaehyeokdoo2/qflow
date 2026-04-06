@@ -11,72 +11,74 @@ from utils.encoders import encoder_modules
 from utils.flax_utils import ModuleDict, TrainState, nonpytree_field
 from utils.networks import ActorVectorField, Value
 
-# Global cache for compiled gradient functions
-_COMPILED_GRAD_FNS = {}
 
-
-class IFQLAgent(flax.struct.PyTreeNode):
-    """Implicit flow Q-learning (IFQL) agent.
-
-    IFQL is the flow variant of implicit diffusion Q-learning (IDQL).
-    """
+class FAWACAgent(flax.struct.PyTreeNode):
+    """Flow AWAC: advantage-weighted BC flow with IQL-style value function."""
 
     rng: Any
     network: Any
     config: Any = nonpytree_field()
 
-    @staticmethod
-    def expectile_loss(adv, diff, expectile):
-        """Compute the expectile loss."""
-        weight = jnp.where(adv >= 0, expectile, (1 - expectile))
-        return weight * (diff**2)
+    def critic_loss(self, batch, grad_params, rng):
+        """Compute the Q and V losses."""
+        rng, sample_rng = jax.random.split(rng)
+        next_actions = self.sample_actions(batch['next_observations'], seed=sample_rng)
+        next_actions = jnp.clip(next_actions, -1, 1)
 
-    def value_loss(self, batch, grad_params):
-        """Compute the IQL value loss."""
-        q1, q2 = self.network.select('target_critic')(batch['observations'], actions=batch['actions'])
-        q = jnp.minimum(q1, q2)
+        next_qs = self.network.select('target_critic')(batch['next_observations'], actions=next_actions)
+        if self.config['q_agg'] == 'min':
+            next_q = next_qs.min(axis=0)
+        else:
+            next_q = next_qs.mean(axis=0)
+
+        target_q = batch['rewards'] + self.config['discount'] * batch['masks'] * next_q
+
+        q = self.network.select('critic')(batch['observations'], actions=batch['actions'], params=grad_params)
+        critic_loss = jnp.square(q - target_q).mean()
+
+        # V loss: fit V to Q (used for advantage weighting in the actor).
+        target_q_sg = self.network.select('target_critic')(batch['observations'], actions=batch['actions'])
+        if self.config['q_agg'] == 'min':
+            target_q_sg = target_q_sg.min(axis=0)
+        else:
+            target_q_sg = target_q_sg.mean(axis=0)
         v = self.network.select('value')(batch['observations'], params=grad_params)
-        value_loss = self.expectile_loss(q - v, q - v, self.config['expectile']).mean()
+        value_loss = jnp.square(target_q_sg - v).mean()
 
-        return value_loss, {
-            'value_loss': value_loss,
-            'v_mean': v.mean(),
-            'v_max': v.max(),
-            'v_min': v.min(),
-        }
-
-    def critic_loss(self, batch, grad_params):
-        """Compute the IQL critic loss."""
-        next_v = self.network.select('value')(batch['next_observations'])
-        q = batch['rewards'] + self.config['discount'] * batch['masks'] * next_v
-
-        q1, q2 = self.network.select('critic')(batch['observations'], actions=batch['actions'], params=grad_params)
-        critic_loss = ((q1 - q) ** 2 + (q2 - q) ** 2).mean()
-
-        return critic_loss, {
+        return critic_loss + value_loss, {
             'critic_loss': critic_loss,
+            'value_loss': value_loss,
             'q_mean': q.mean(),
             'q_max': q.max(),
             'q_min': q.min(),
         }
 
-    def actor_loss(self, batch, grad_params, rng=None):
-        """Compute the behavioral flow-matching actor loss."""
+    def actor_loss(self, batch, grad_params, rng):
+        """Compute the advantage-weighted BC flow loss."""
         batch_size, action_dim = batch['actions'].shape
         rng, x_rng, t_rng = jax.random.split(rng, 3)
 
+        # BC flow loss.
         x_0 = jax.random.normal(x_rng, (batch_size, action_dim))
         x_1 = batch['actions']
         t = jax.random.uniform(t_rng, (batch_size, 1))
         x_t = (1 - t) * x_0 + t * x_1
         vel = x_1 - x_0
 
-        pred = self.network.select('actor_flow')(batch['observations'], x_t, t, params=grad_params)
-        actor_loss = jnp.mean((pred - vel) ** 2)
+        pred = self.network.select('actor_bc_flow')(batch['observations'], x_t, t, params=grad_params)
 
-        return actor_loss, {
-            'actor_loss': actor_loss,
-        }
+        qs = self.network.select('critic')(batch['observations'], actions=batch['actions'])
+        if self.config['q_agg'] == 'min':
+            q = qs.min(axis=0)
+        else:
+            q = qs.mean(axis=0)
+        v = self.network.select('value')(batch['observations'])
+        exp_a = jnp.exp((q - v) * self.config['inv_temp'])
+        exp_a = jnp.minimum(exp_a, 100.0)
+
+        actor_loss = jnp.mean(jnp.mean(jnp.square(pred - vel), axis=-1) * exp_a)
+
+        return actor_loss, {'actor_loss': actor_loss}
 
     @jax.jit
     def total_loss(self, batch, grad_params, rng=None):
@@ -84,20 +86,17 @@ class IFQLAgent(flax.struct.PyTreeNode):
         info = {}
         rng = rng if rng is not None else self.rng
 
-        value_loss, value_info = self.value_loss(batch, grad_params)
-        for k, v in value_info.items():
-            info[f'value/{k}'] = v
+        rng, actor_rng, critic_rng = jax.random.split(rng, 3)
 
-        critic_loss, critic_info = self.critic_loss(batch, grad_params)
+        critic_loss, critic_info = self.critic_loss(batch, grad_params, critic_rng)
         for k, v in critic_info.items():
             info[f'critic/{k}'] = v
 
-        rng, actor_rng = jax.random.split(rng)
         actor_loss, actor_info = self.actor_loss(batch, grad_params, actor_rng)
         for k, v in actor_info.items():
             info[f'actor/{k}'] = v
 
-        loss = value_loss + critic_loss + actor_loss
+        loss = critic_loss + actor_loss
         return loss, info
 
     def target_update(self, network, module_name):
@@ -128,42 +127,20 @@ class IFQLAgent(flax.struct.PyTreeNode):
         observations,
         seed=None,
         temperature=1.0,
-        return_full_candidates=False,
     ):
-        """Sample actions from the actor."""
-        orig_observations = observations
-        if self.config['encoder'] is not None:
-            observations = self.network.select('actor_flow_encoder')(observations)
-        action_seed, noise_seed = jax.random.split(seed)
-
-        # Sample `num_samples` noises and propagate them through the flow.
-        actions = jax.random.normal(
-            action_seed,
-            (
-                self.config['num_samples'],
-                *observations.shape[:-1],
-                self.config['action_dim'],
-            ),
+        """Sample actions from the flow policy."""
+        noises = jax.random.normal(
+            seed,
+            (*observations.shape[: -len(self.config['ob_dims'])], self.config['action_dim']),
         )
-        n_observations = jnp.repeat(jnp.expand_dims(observations, 0), self.config['num_samples'], axis=0)
-        n_orig_observations = jnp.repeat(jnp.expand_dims(orig_observations, 0), self.config['num_samples'], axis=0)
-
+        actions = noises
         for i in range(self.config['flow_steps']):
-            t = jnp.full((self.config['num_samples'], *observations.shape[:-1], 1), i / self.config['flow_steps'])
-            vels = self.network.select('actor_flow')(n_observations, actions, t, is_encoded=True)
+            t = jnp.full((*observations.shape[:-1], 1), i / self.config['flow_steps'])
+            vels = self.network.select('actor_bc_flow')(observations, actions, t)
             actions = actions + vels / self.config['flow_steps']
         actions = jnp.clip(actions, -1, 1)
-        full_candidates = actions
+        return actions
 
-        # Pick the action with the highest Q-value.
-        q = self.network.select('critic')(n_orig_observations, actions=actions).min(axis=0)
-        actions = actions[jnp.argmax(q)]
-
-        if return_full_candidates:
-            return actions, full_candidates
-        else:
-            return actions
-            
     @classmethod
     def create(
         cls,
@@ -184,45 +161,43 @@ class IFQLAgent(flax.struct.PyTreeNode):
         rng, init_rng = jax.random.split(rng, 2)
 
         ex_times = ex_actions[..., :1]
+        ob_dims = ex_observations.shape[1:]
         action_dim = ex_actions.shape[-1]
 
         # Define encoders.
         encoders = dict()
         if config['encoder'] is not None:
             encoder_module = encoder_modules[config['encoder']]
-            encoders['value'] = encoder_module()
             encoders['critic'] = encoder_module()
-            encoders['actor_flow'] = encoder_module()
+            encoders['value'] = encoder_module()
+            encoders['actor_bc_flow'] = encoder_module()
 
         # Define networks.
-        value_def = Value(
-            hidden_dims=config['value_hidden_dims'],
-            layer_norm=config['layer_norm'],
-            num_ensembles=1,
-            encoder=encoders.get('value'),
-        )
         critic_def = Value(
             hidden_dims=config['value_hidden_dims'],
             layer_norm=config['layer_norm'],
             num_ensembles=2,
             encoder=encoders.get('critic'),
         )
-        actor_flow_def = ActorVectorField(
+        value_def = Value(
+            hidden_dims=config['value_hidden_dims'],
+            layer_norm=config['layer_norm'],
+            num_ensembles=1,
+            encoder=encoders.get('value'),
+        )
+        actor_bc_flow_def = ActorVectorField(
             hidden_dims=config['actor_hidden_dims'],
             action_dim=action_dim,
             layer_norm=config['actor_layer_norm'],
-            encoder=encoders.get('actor_flow'),
+            encoder=encoders.get('actor_bc_flow'),
         )
 
         network_info = dict(
-            value=(value_def, (ex_observations,)),
             critic=(critic_def, (ex_observations, ex_actions)),
             target_critic=(copy.deepcopy(critic_def), (ex_observations, ex_actions)),
-            actor_flow=(actor_flow_def, (ex_observations, ex_actions, ex_times)),
+            value=(value_def, (ex_observations,)),
+            actor_bc_flow=(actor_bc_flow_def, (ex_observations, ex_actions, ex_times)),
         )
-        if encoders.get('actor_flow') is not None:
-            # Add actor_flow_encoder to ModuleDict to make it separately callable.
-            network_info['actor_flow_encoder'] = (encoders.get('actor_flow'), (ex_observations,))
         networks = {k: v[0] for k, v in network_info.items()}
         network_args = {k: v[1] for k, v in network_info.items()}
 
@@ -231,9 +206,10 @@ class IFQLAgent(flax.struct.PyTreeNode):
         network_params = network_def.init(init_rng, **network_args)['params']
         network = TrainState.create(network_def, network_params, tx=network_tx)
 
-        params = network_params
+        params = network.params
         params['modules_target_critic'] = params['modules_critic']
 
+        config['ob_dims'] = ob_dims
         config['action_dim'] = action_dim
         return cls(rng, network=network, config=flax.core.FrozenDict(**config))
 
@@ -241,7 +217,8 @@ class IFQLAgent(flax.struct.PyTreeNode):
 def get_config():
     config = ml_collections.ConfigDict(
         dict(
-            agent_name='ifql',  # Agent name.
+            agent_name='fawac',  # Agent name.
+            ob_dims=ml_collections.config_dict.placeholder(list),  # Observation dimensions (will be set automatically).
             action_dim=ml_collections.config_dict.placeholder(int),  # Action dimension (will be set automatically).
             lr=3e-4,  # Learning rate.
             batch_size=256,  # Batch size.
@@ -251,9 +228,9 @@ def get_config():
             actor_layer_norm=False,  # Whether to use layer normalization for the actor.
             discount=0.99,  # Discount factor.
             tau=0.005,  # Target network update rate.
-            expectile=0.9,  # IQL expectile.
-            num_samples=32,  # Number of action samples for rejection sampling.
+            q_agg='mean',  # Aggregation method for target Q values.
             flow_steps=10,  # Number of flow steps.
+            inv_temp=10.0,  # Inverse temperature for advantage weighting.
             encoder=ml_collections.config_dict.placeholder(str),  # Visual encoder name (None, 'impala_small', etc.).
         )
     )

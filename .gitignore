@@ -10,3 +10,9 @@ test/
 guidance_eval_results/
 exp/
 plots/
+qflow-reproduce
+fql-reproduce
+qipo-reproduce
+fbrac-reproduce
+rebuttal
+online_finetuning

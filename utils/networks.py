@@ -2,6 +2,7 @@ from typing import Any, Optional, Sequence
 
 import distrax
 import flax.linen as nn
+import jax
 import jax.numpy as jnp
 
 
@@ -39,6 +40,7 @@ class MLP(nn.Module):
         activate_final: Whether to apply activation to the final layer.
         kernel_init: Kernel initializer.
         layer_norm: Whether to apply layer normalization.
+        use_residual: Whether to use a residual connection from input to final output.
     """
 
     hidden_dims: Sequence[int]
@@ -46,17 +48,52 @@ class MLP(nn.Module):
     activate_final: bool = False
     kernel_init: Any = default_init()
     layer_norm: bool = False
+    use_residual: bool = False
 
     @nn.compact
     def __call__(self, x):
-        for i, size in enumerate(self.hidden_dims):
-            x = nn.Dense(size, kernel_init=self.kernel_init)(x)
-            if i + 1 < len(self.hidden_dims) or self.activate_final:
+        # Architecture: input_projection → hidden_layers → output_projection
+        # Residual: from output of input_projection to input of output_projection
+        
+        # Input projection (first layer)
+        if len(self.hidden_dims) > 0:
+            x = nn.Dense(self.hidden_dims[0], kernel_init=self.kernel_init, name='layer_0')(x)
+            if len(self.hidden_dims) > 1 or self.activate_final:
                 x = self.activations(x)
                 if self.layer_norm:
-                    x = nn.LayerNorm()(x)
-            if i == len(self.hidden_dims) - 2:
-                self.sow('intermediates', 'feature', x)
+                    x = nn.LayerNorm(name='layer_norm_0')(x)
+            
+            # Store output of input projection for residual connection
+            input_proj_output = x if self.use_residual else None
+            
+            # Hidden layers (middle layers, if any)
+            for i in range(1, len(self.hidden_dims) - 1):
+                size = self.hidden_dims[i]
+                x = nn.Dense(size, kernel_init=self.kernel_init, name=f'layer_{i}')(x)
+                x = self.activations(x)
+                if self.layer_norm:
+                    x = nn.LayerNorm(name=f'layer_norm_{i}')(x)
+                if i == len(self.hidden_dims) - 2:
+                    self.sow('intermediates', 'feature', x)
+            
+            # Before output projection, add residual from input projection output
+            if self.use_residual and input_proj_output is not None and len(self.hidden_dims) > 1:
+                # At this point, x is the input to the output projection
+                # Add residual from input projection output (dimensions should match)
+                x = x + input_proj_output
+            
+            # Output projection (final layer)
+            if len(self.hidden_dims) > 1:
+                final_size = self.hidden_dims[-1]
+                x = nn.Dense(final_size, kernel_init=self.kernel_init, name=f'layer_{len(self.hidden_dims)-1}')(x)
+                if self.activate_final:
+                    x = self.activations(x)
+                    if self.layer_norm:
+                        x = nn.LayerNorm(name=f'layer_norm_{len(self.hidden_dims)-1}')(x)
+        else:
+            # Edge case: no hidden dims (shouldn't happen in practice)
+            pass
+        
         return x
 
 
@@ -159,22 +196,29 @@ class Value(nn.Module):
         layer_norm: Whether to apply layer normalization.
         num_ensembles: Number of ensemble components.
         encoder: Optional encoder module to encode the inputs.
+        use_residual: Whether to use residual connections in the MLP.
     """
 
     hidden_dims: Sequence[int]
     layer_norm: bool = True
     num_ensembles: int = 2
     encoder: nn.Module = None
+    use_residual: bool = False
 
     def setup(self):
         mlp_class = MLP
         if self.num_ensembles > 1:
             mlp_class = ensemblize(mlp_class, self.num_ensembles)
-        value_net = mlp_class((*self.hidden_dims, 1), activate_final=False, layer_norm=self.layer_norm)
+        value_net = mlp_class(
+            (*self.hidden_dims, 1), 
+            activate_final=False, 
+            layer_norm=self.layer_norm,
+            use_residual=self.use_residual
+        )
 
         self.value_net = value_net
 
-    def __call__(self, observations, actions=None):
+    def __call__(self, observations, actions=None, scores=None):
         """Return values or critic values.
 
         Args:
@@ -185,7 +229,10 @@ class Value(nn.Module):
             inputs = [self.encoder(observations)]
         else:
             inputs = [observations]
-        if actions is not None:
+        if actions is not None and scores is not None:
+            inputs.append(actions)
+            inputs.append(scores)
+        elif actions is not None:
             inputs.append(actions)
         inputs = jnp.concatenate(inputs, axis=-1)
 
@@ -193,8 +240,11 @@ class Value(nn.Module):
 
         return v
 
-class TimeDependentValue(nn.Module):
-    """Time-dependent value/critic network.
+
+class InnerValue(nn.Module):
+    """Value/critic network.
+
+    This module can be used for both value V(s, a, t) and critic Q(s, a, u, t) functions.
 
     Attributes:
         hidden_dims: Hidden layer dimensions.
@@ -216,22 +266,86 @@ class TimeDependentValue(nn.Module):
 
         self.value_net = value_net
 
-    def __call__(self, observations, actions=None, times=None):
+    def __call__(self, observations, actions=None, times=None, scores=None):
         """Return values or critic values.
 
         Args:
             observations: Observations.
             actions: Actions (optional).
             times: Times (optional).
+            scores: Scores (optional).
         """
         if self.encoder is not None:
             inputs = [self.encoder(observations)]
         else:
             inputs = [observations]
-        if actions is not None:
+        if actions is not None and scores is not None and times is not None:
             inputs.append(actions)
-        if times is not None:
+            inputs.append(scores)
             inputs.append(times)
+        elif actions is not None and times is not None:
+            inputs.append(actions)
+            inputs.append(times)
+        
+        inputs = jnp.concatenate(inputs, axis=-1)
+
+        v = self.value_net(inputs).squeeze(-1)
+
+        return v
+
+
+class TimeConditionedCritic(nn.Module):
+    """
+    Time-dependent value/critic network for denoising distillation.
+    Maps (s, x_t, t) -> Value, representing E[Q(s, a_clean) | x_t].
+    
+    Strictly takes (observations, actions, times) as input, unlike InnerValue
+    which accepts velocity/scores.
+
+    Attributes:
+        hidden_dims: Hidden layer dimensions.
+        layer_norm: Whether to apply layer normalization.
+        num_ensembles: Number of ensemble components.
+        encoder: Optional encoder module to encode the inputs.
+        use_residual: Whether to use residual connections in the MLP.
+    """
+
+    hidden_dims: Sequence[int]
+    layer_norm: bool = True
+    num_ensembles: int = 2
+    encoder: nn.Module = None
+    use_residual: bool = False
+
+    def setup(self):
+        mlp_class = MLP
+        if self.num_ensembles > 1:
+            mlp_class = ensemblize(mlp_class, self.num_ensembles)
+        
+        # Output is scalar value
+        self.value_net = mlp_class(
+            (*self.hidden_dims, 1), 
+            activate_final=False, 
+            layer_norm=self.layer_norm,
+            use_residual=self.use_residual
+        )
+
+    def __call__(self, observations, actions, times):
+        """Return values.
+
+        Args:
+            observations: Observations (s).
+            actions: Noisy Actions (x_t).
+            times: Time steps (t).
+        """
+        if self.encoder is not None:
+            inputs = [self.encoder(observations)]
+        else:
+            inputs = [observations]
+        
+        # Concatenate s, x_t, t directly
+        inputs.append(actions)
+        inputs.append(times)
+        
         inputs = jnp.concatenate(inputs, axis=-1)
 
         v = self.value_net(inputs).squeeze(-1)
@@ -247,15 +361,22 @@ class ActorVectorField(nn.Module):
         action_dim: Action dimension.
         layer_norm: Whether to apply layer normalization.
         encoder: Optional encoder module to encode the inputs.
+        use_residual: Whether to use residual connections in the MLP.
     """
 
     hidden_dims: Sequence[int]
     action_dim: int
     layer_norm: bool = False
     encoder: nn.Module = None
+    use_residual: bool = False
 
     def setup(self) -> None:
-        self.mlp = MLP((*self.hidden_dims, self.action_dim), activate_final=False, layer_norm=self.layer_norm)
+        self.mlp = MLP(
+            (*self.hidden_dims, self.action_dim),
+            activate_final=False,
+            layer_norm=self.layer_norm,
+            use_residual=self.use_residual
+        )
 
     @nn.compact
     def __call__(self, observations, actions, times=None, is_encoded=False):
@@ -277,217 +398,3 @@ class ActorVectorField(nn.Module):
         v = self.mlp(inputs)
 
         return v
-
-class LatentLyapunovFunction(nn.Module):
-    """
-    Lyapunov function with direct latent projection
-    
-    Architecture:
-    1. Direct projection: (s,a) -> latent dimension (no layer norm here)
-    2. Hidden layers with optional layer normalization  
-    3. Output layer -> V(z) (scalar Lyapunov value)
-    
-    Attributes:
-        state_dim: State dimension.
-        action_dim: Action dimension.
-        latent_dim: Latent dimension for projection.
-        hidden_dim: Hidden layer dimension.
-        layer_norm: Whether to apply layer normalization.
-    """
-    
-    hidden_dim: Sequence[int]
-    state_dim: int = 2
-    action_dim: int = 2
-    latent_dim: int = 16
-    layer_norm: bool = False
-
-    def setup(self):
-        # Direct latent projection layer with proper initialization and activation
-        self.latent_projection = nn.Dense(
-            self.latent_dim, 
-            kernel_init=nn.initializers.variance_scaling(0.1, 'fan_avg', 'uniform')  # Smaller initialization
-        )
-        
-        # Lyapunov network using MLP for hidden layers
-        self.lyapunov_mlp = MLP(
-            hidden_dims=(*self.hidden_dim, 1),
-            activate_final=False,  # No activation on final layer to allow negative values
-            layer_norm=self.layer_norm,
-            kernel_init=nn.initializers.variance_scaling(0.1, 'fan_avg', 'uniform')  # Smaller initialization
-        )
-        
-    def __call__(self, state, action):
-        """
-        Forward pass: (s,a) -> latent projection -> hidden layers -> V(z)
-        This returns the RAW network output (higher values for expert actions)
-        
-        Args:
-            state: State tensor.
-            action: Action tensor.
-        """
-        # Handle single dimension inputs by expanding if needed
-        if len(state.shape) == 1:
-            state = jnp.expand_dims(state, axis=0)
-        if len(action.shape) == 1:
-            action = jnp.expand_dims(action, axis=0)
-            
-        # Concatenate state and action
-        sa_input = jnp.concatenate([state, action], axis=-1)
-        
-        # Direct latent projection with activation to prevent unbounded growth
-        latent = self.latent_projection(sa_input)
-        latent = nn.tanh(latent)  # Bound the latent representation
-        
-        # Process through MLP to get Lyapunov value
-        v_value = self.lyapunov_mlp(latent)
-        
-        return v_value.squeeze(-1)
-    
-    def lyapunov_value(self, state, action):
-        """
-        Get the actual Lyapunov value: -V(s,a) (negated for proper interpretation)
-        Use this for evaluation and plotting where lower values should indicate safer actions
-        
-        Args:
-            state: State tensor.
-            action: Action tensor.
-        """
-        return -self.__call__(state, action)
-    
-class EncoderDecoderLyapunovFunction(nn.Module):
-    """
-    Lyapunov function with separate encoder-decoder components
-    
-    Architecture:
-    1. Encoder: (s,a) -> latent dimension
-    2. Decoder: latent -> (s,a) reconstruction  
-    3. Lyapunov MLP: latent -> V(z) (scalar Lyapunov value)
-    
-    Attributes:
-        state_dim: State dimension.
-        action_dim: Action dimension.
-        latent_dim: Latent dimension for projection.
-        hidden_dim: Hidden layer dimension.
-        layer_norm: Whether to apply layer normalization.
-    """
-
-    encoder_hidden_dim: Sequence[int]
-    decoder_hidden_dim: Sequence[int]
-    hidden_dim: Sequence[int]
-    state_dim: int = 2
-    action_dim: int = 2
-    latent_dim: int = 16
-    layer_norm: bool = False
-    module_layer_norm: bool = False
-
-    def setup(self):
-        # Encoder
-        self.encoder = MLP(
-            hidden_dims=(*self.encoder_hidden_dim, self.latent_dim),
-            activate_final=False,
-            layer_norm=self.module_layer_norm
-        )
-
-        # Decoder
-        self.decoder = MLP(
-            hidden_dims=(*self.decoder_hidden_dim, self.state_dim + self.action_dim),
-            activate_final=False,
-            layer_norm=self.module_layer_norm
-        )
-
-        # Lyapunov MLP
-        self.lyapunov_mlp = MLP(
-            hidden_dims=(*self.hidden_dim, 1),
-            activate_final=False,
-            layer_norm=self.layer_norm
-        )
-    
-    def encode(self, state, action):
-        """Encode state-action pair to latent representation."""
-        sa_input = jnp.concatenate([state, action], axis=-1)
-        return self.encoder(sa_input)
-    
-    def decode(self, latent):
-        """Decode latent representation back to state-action pair."""
-        decoded = self.decoder(latent)
-        decoded_state = decoded[:, :self.state_dim]
-        decoded_action = decoded[:, self.state_dim:]
-        return decoded_state, decoded_action
-    
-    def lyapunov_value(self, latent):
-        """Compute Lyapunov value from latent representation."""
-        return self.lyapunov_mlp(latent).squeeze(-1)
-    
-    def __call__(self, state, action):
-        """
-        Forward pass: (s,a) -> latent -> V(z)
-        
-        Returns only the Lyapunov value.
-        
-        Args:
-            state: State tensor
-            action: Action tensor
-            
-        Returns:
-            lyapunov_value: Scalar Lyapunov value
-        """
-        latent = self.encode(state, action)
-        return self.lyapunov_value(latent)
-    
-    def process_pair(self, state, action):
-        """
-        Encode and decode the state and action (used for reconstruction)
-        """
-
-        latent = self.encoder(jnp.concatenate([state, action], axis=-1))
-        decoded = self.decoder(latent)
-        decoded_state = decoded[:, :self.state_dim]
-        decoded_action = decoded[:, self.state_dim:]
-        return decoded_state, decoded_action
-    
-    def reconstruction_loss(self, state, action):
-        """
-        Compute reconstruction loss: MSE between original and reconstructed (s,a) pairs
-        
-        Args:
-            state: State tensor.
-            action: Action tensor.
-            
-        Returns:
-            reconstruction_loss: MSE loss between original and reconstructed inputs
-        """
-        decoded_state, decoded_action = self.process_pair(state, action)
-        
-        # Compute MSE loss for both state and action reconstruction
-        state_loss = jnp.mean((state - decoded_state) ** 2)
-        action_loss = jnp.mean((action - decoded_action) ** 2)
-        
-        return state_loss + action_loss
-    
-    def encode_only(self, sa_input):
-        """Apply encoder only."""
-        return self.encoder(sa_input)
-    
-    def decode_only(self, latent):
-        """Apply decoder only."""
-        return self.decoder(latent)
-    
-    def reconstruct(self, state, action):
-        """Reconstruct state and action through encoder-decoder."""
-        sa_input = jnp.concatenate([state, action], axis=-1)
-        latent = self.encoder(sa_input)
-        decoded = self.decoder(latent)
-        decoded_state = decoded[:, :self.state_dim]
-        decoded_action = decoded[:, self.state_dim:]
-        return decoded_state, decoded_action
-    
-    def lyapunov_value(self, state, action):
-        """
-        Get the actual Lyapunov value: -V(s,a) (negated for proper interpretation)
-        Use this for evaluation and plotting where lower values should indicate safer actions
-        
-        Args:
-            state: State tensor.
-            action: Action tensor.
-        """
-        return -self.__call__(state, action)

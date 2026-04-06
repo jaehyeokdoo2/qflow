@@ -271,7 +271,7 @@ class IDQLAgent(flax.struct.PyTreeNode):
         q_vals = []
         v_vals = []
 
-        seed, action_seed = jax.random.split(seed)
+        action_seed, noise_seed, guidance_rng = jax.random.split(seed, 3)
 
         # Preserve un-encoded observations for energy and Q computation
         orig_observations = observations
@@ -282,7 +282,7 @@ class IDQLAgent(flax.struct.PyTreeNode):
         # Sample only 1 action if guidance is to be applied (matching IFQL logic)
         num_samples = self.config['num_samples']
         if guidance_coeff != 0.0 and partial_guidance != 0:
-            num_samples = 1
+            num_samples = 4
             
         actions = jax.random.normal(
             action_seed,
@@ -335,7 +335,7 @@ class IDQLAgent(flax.struct.PyTreeNode):
             preds = self.network.select('actor_diffusion')(n_observations, actions, t, is_encoded=True)
 
             # Split seed BEFORE generating noise
-            seed, step_noise_seed = jax.random.split(seed)
+            noise_seed, step_noise_seed = jax.random.split(noise_seed)
             step_noise = jax.random.normal(
                 step_noise_seed,
                 actions.shape,
@@ -423,11 +423,9 @@ class IDQLAgent(flax.struct.PyTreeNode):
             # falls back to rejection sampling (select best action)
             actions = actions[jnp.argmax(q)]
         else:
-            # Use expectile selection when guidance is applied
-            action_expectile = 1.0
-            q_sorted_indices = jnp.argsort(q)
-            expectile_idx = int(action_expectile * (q.shape[0] - 1))
-            chosen_idx = q_sorted_indices[expectile_idx]
+            tau = 1.0
+            logits = q / tau
+            chosen_idx = jax.random.categorical(guidance_rng, logits)
             actions = actions[chosen_idx]
 
         q_vals.append(q)

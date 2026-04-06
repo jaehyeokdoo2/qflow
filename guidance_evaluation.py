@@ -192,6 +192,7 @@ def evaluate_with_guidance(
     gradient_vals_by_episode = []
     lambda_vals_by_episode = []
     cosine_sim_vals_by_episode = []
+    inference_costs = []
 
     for i in trange(num_eval_episodes, desc=f"Evaluating coeff={guidance_coeff}"):
         key, ep_key = jax.random.split(key)
@@ -205,7 +206,10 @@ def evaluate_with_guidance(
         step = 0
         while not done:
             ep_key, action_key = jax.random.split(ep_key)
+            start = time.perf_counter()
             result = guided_actor_fn(observations=observation, temperature=eval_temperature, seed=ep_key)
+            inference_cost = time.perf_counter() - start
+            inference_costs.append(inference_cost)
             # Handle different return formats based on guidance method
             if isinstance(result, tuple) and len(result) == 5:
                 # Covariance method returns (action, energy_vals, gradient_vals, lambda_vals, cosine_sim_vals)
@@ -362,7 +366,7 @@ def evaluate_with_guidance(
     for k, v in stats.items():
         stats[k] = np.mean(v)
 
-    return stats, trajs, energy_vals_by_episode, gradient_vals_by_episode, lambda_vals_by_episode, cosine_sim_vals_by_episode
+    return stats, trajs, energy_vals_by_episode, gradient_vals_by_episode, lambda_vals_by_episode, cosine_sim_vals_by_episode, inference_costs
 
 
 def main(_):
@@ -480,6 +484,7 @@ def main(_):
         gradient_vals_by_coeff = []
         lambda_vals_by_coeff = []
         cosine_sim_vals_by_coeff = []
+        inference_costs_by_coeff = []
         for coeff in guidance_coeffs:
             print(f"\n{'='*60}")
             print(f"EVALUATING GUIDANCE COEFFICIENT: {coeff}")
@@ -491,7 +496,7 @@ def main(_):
             
             start_time = time.time()
             
-            eval_info, trajs, energy_vals_by_episode, gradient_vals_by_episode, lambda_vals_by_episode, cosine_sim_vals_by_episode = evaluate_with_guidance(
+            eval_info, trajs, energy_vals_by_episode, gradient_vals_by_episode, lambda_vals_by_episode, cosine_sim_vals_by_episode, inference_costs = evaluate_with_guidance(
                 agent=agent,
                 env=eval_env,
                 energy_fn=energy_fn,
@@ -508,6 +513,7 @@ def main(_):
             gradient_vals_by_coeff.append(gradient_vals_by_episode)
             lambda_vals_by_coeff.append(lambda_vals_by_episode)
             cosine_sim_vals_by_coeff.append(cosine_sim_vals_by_episode)
+            inference_costs_by_coeff.append(np.array(inference_costs).mean())
             end_time = time.time()
             eval_time = end_time - start_time
             
@@ -521,6 +527,7 @@ def main(_):
             # Print results
             print(f"\nGUIDANCE COEFFICIENT: {coeff}")
             print(f"Evaluation time: {eval_time:.2f} seconds")
+            print(f"Inference cost: {np.array(inference_costs).mean() * 1000:.3f} milliseconds")
             print(f"Time per episode: {eval_time/FLAGS.eval_episodes:.3f} seconds")
             print("\nResults:")
             for key, value in eval_info.items():
@@ -566,6 +573,8 @@ def main(_):
             avg_reward = eval_info.get('reward', 0.0)
             
             print(f"{coeff:<10} {success_rate:<12.4f} {avg_reward:<12.4f} {time_per_ep:<10.3f} {eval_time:<12.2f}")
+        
+        print(f"Overall Average Inference cost: {np.array(inference_costs_by_coeff).mean() * 1000:.3f} milliseconds")
     
     print(f"\n{'='*80}")
     print("EVALUATION COMPLETED")
@@ -577,15 +586,24 @@ def main(_):
             model_base_dir = FLAGS.restore_path if os.path.isdir(FLAGS.restore_path) else os.path.dirname(FLAGS.restore_path)
             eval_dir = os.path.join(model_base_dir, 'eval_results')
             os.makedirs(eval_dir, exist_ok=True)
-            summary_path = os.path.join(eval_dir, f"summary_{FLAGS.env_name}_sd{FLAGS.seed}_pg{FLAGS.partial_guidance}.json")
-            summary_payload = {
-                str(c): {
-                    **all_results[c]['eval_info'],
-                    'eval_time': all_results[c]['eval_time'],
-                    'num_episodes': all_results[c]['num_episodes'],
+            if FLAGS.use_rejection_sampling:
+                summary_path = os.path.join(eval_dir, f"summary_{FLAGS.env_name}_sd{FLAGS.seed:03d}_rs{FLAGS.select_quantile}.json")
+                summary_payload = {
+                    'eval_info': all_results['rejection_sampling']['eval_info'],
+                    'eval_time': all_results['rejection_sampling']['eval_time'],
+                    'num_episodes': all_results['rejection_sampling']['num_episodes'],
+                    'select_quantile': FLAGS.select_quantile
                 }
-                for c in guidance_coeffs
-            }
+            else:
+                summary_path = os.path.join(eval_dir, f"summary_{FLAGS.env_name}_sd{FLAGS.seed:03d}_pg{FLAGS.partial_guidance}.json")
+                summary_payload = {
+                    str(c): {
+                        **all_results[c]['eval_info'],
+                        'eval_time': all_results[c]['eval_time'],
+                        'num_episodes': all_results[c]['num_episodes'],
+                    }
+                    for c in guidance_coeffs
+                }
             with open(summary_path, 'w') as f:
                 json.dump(summary_payload, f, indent=2)
             print(f"Saved summary metrics to {summary_path}")

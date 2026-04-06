@@ -377,7 +377,7 @@ class DQLAgent(flax.struct.PyTreeNode):
 
                     if rescale_strategy == "normalize":
                         # normalize
-                        guidance_grad = guidance_grad * jnp.linalg.norm(preds) / jnp.linalg.norm(guidance_grad)
+                        guidance_grad = guidance_grad * jnp.linalg.norm(preds) / (1e-8 + jnp.linalg.norm(guidance_grad))
                     
                     return guidance_grad, 0.0
                 else:
@@ -405,7 +405,7 @@ class DQLAgent(flax.struct.PyTreeNode):
             )
             guidance_grad = jnp.clip(guidance_weight * guidance_grad, -1, 1)
 
-            gradient_vals.append(0)
+            gradient_vals.append(guidance_grad)
             cosine_sim_vals.append(0) 
 
             # guided_preds = preds - guidance_weight * sqrt_one_minus_alphas_cumprod * guidance_grad

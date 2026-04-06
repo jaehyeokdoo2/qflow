@@ -1,10 +1,5 @@
 import os
 import platform
-import sys
-
-# Must be set before importing JAX to limit GPU memory pre-allocation.
-# JAX pre-allocates 75% of GPU memory by default; override here or via env var.
-os.environ.setdefault('XLA_PYTHON_CLIENT_MEM_FRACTION', '0.3')
 
 import json
 import random
@@ -24,9 +19,6 @@ from utils.evaluation import evaluate, evaluate_init_noise, flatten
 from utils.flax_utils import restore_agent, save_agent
 from utils.log_utils import CsvLogger, get_exp_name, get_flag_dict, get_wandb_video, setup_wandb
 
-# Import QFlow config
-from qflow_config import get_qflow_params, extract_domain_from_env_name
-
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string('run_group', 'Debug', 'Run group.')
@@ -34,11 +26,10 @@ flags.DEFINE_integer('seed', 0, 'Random seed.')
 flags.DEFINE_string('env_name', 'cube-double-play-singletask-v0', 'Environment (dataset) name.')
 flags.DEFINE_string('save_dir', 'exp/', 'Save directory.')
 flags.DEFINE_string('exp_name', None, 'Experiment name.')
-flags.DEFINE_string('restore_path', None, 'Restore path.')
+flags.DEFINE_string('restore_path', None, 'Restore path (required for online fine-tuning).')
 flags.DEFINE_integer('restore_epoch', None, 'Restore epoch.')
 
-flags.DEFINE_integer('offline_steps', 1000000, 'Number of offline steps.')
-flags.DEFINE_integer('online_steps', 0, 'Number of online steps.')
+flags.DEFINE_integer('online_steps', 100000, 'Number of online steps.')
 flags.DEFINE_integer('buffer_size', 2000000, 'Replay buffer size.')
 flags.DEFINE_integer('log_interval', 5000, 'Logging interval.')
 flags.DEFINE_integer('eval_interval', 100000, 'Evaluation interval.')
@@ -48,8 +39,8 @@ flags.DEFINE_integer('eval_episodes', 50, 'Number of evaluation episodes.')
 flags.DEFINE_integer('video_episodes', 0, 'Number of video episodes for each task.')
 flags.DEFINE_integer('video_frame_skip', 3, 'Frame skip for videos.')
 
-# Init noise evaluation settings (for qflow)
-flags.DEFINE_boolean('eval_init_noise', True, 'Whether to evaluate init noise sampling for qflow.')
+# Init noise evaluation settings (for fbrac_vd)
+flags.DEFINE_boolean('eval_init_noise', True, 'Whether to evaluate init noise sampling for fbrac_vd.')
 flags.DEFINE_integer('init_noise_n_samples', 16, 'Number of noise candidates for init noise evaluation.')
 flags.DEFINE_list('init_noise_temperatures', ['0.1', '0.5', '1.0'], 'List of temperatures for init noise evaluation.')
 
@@ -61,56 +52,17 @@ config_flags.DEFINE_config_file('agent', 'agents/fql.py', lock_config=False)
 
 
 def main(_):
+    # Validate that restore_path is provided
+    if FLAGS.restore_path is None:
+        raise ValueError('restore_path must be provided for online fine-tuning. Please specify the path to the saved model.')
+
     # Set up logger.
     agent_name = FLAGS.agent.agent_name
     env_name = FLAGS.env_name
-    config = FLAGS.agent
-    
-    # ===== QFLOW-SPECIFIC: Get hyperparameters from config =====
-    if agent_name == 'qflow':
-        domain = extract_domain_from_env_name(env_name)
-        qflow_params = get_qflow_params(domain)
-        
-        # Check which parameters were explicitly set via command line arguments
-        # Look for --agent.key=value patterns in sys.argv
-        cmdline_overrides = set()
-        for arg in sys.argv:
-            if arg.startswith('--agent.'):
-                # Extract the key name (e.g., '--agent.alpha=0.1' -> 'alpha')
-                key_part = arg.split('=')[0]  # '--agent.alpha'
-                if '.' in key_part:
-                    key = key_part.split('.', 1)[1]  # 'alpha'
-                    cmdline_overrides.add(key)
-        
-        # Merge QFlow hyperparameters into config
-        # Only set values that were NOT explicitly overridden via command line
-        # This allows command-line flags (--agent.param=value) to override config file values
-        for key, value in qflow_params.items():
-            if key not in cmdline_overrides:
-                config[key] = value
-        
-        print(f"Using domain: {domain}")
-        print(f"QFlow hyperparameters from config file: {qflow_params}")
-        if cmdline_overrides:
-            print(f"Command-line overrides: {sorted(cmdline_overrides)}")
-    # ===== End QFLOW-SPECIFIC =====
-    
     if FLAGS.exp_name is not None:
         exp_name = FLAGS.exp_name
     else:
-        # Generate readable experiment name for qflow
-        if agent_name == 'qflow':
-            env_short = env_name.replace('-singletask-task', '-t').replace('-singletask', '').replace('-v0', '')
-            alpha = config.get('alpha', 'na')
-            q_agg = config.get('q_agg', 'na')
-            time_embed_str = str(config.get('time_embed_dim')) if config.get('use_time_embed', False) else 'na'
-            actor_loss = config.get('actor_loss_type', 'na')
-            # Convert float values to string, handling integers cleanly
-            alpha_str = str(int(alpha)) if isinstance(alpha, (int, float)) and alpha == int(alpha) else str(alpha)
-            exp_name = f"qflow-{env_short}-a{alpha_str}-qagg{q_agg}-te{time_embed_str}-al{actor_loss}-sd{FLAGS.seed}"
-        else:
-            exp_name = f"{agent_name}_{env_name}_sd{FLAGS.seed}"
-    
+        exp_name = f"{agent_name}_{env_name}_online_sd{FLAGS.seed}"
     setup_wandb(project=agent_name, group=FLAGS.run_group, name=exp_name)
 
     FLAGS.save_dir = os.path.join(FLAGS.save_dir, wandb.run.project, FLAGS.run_group, exp_name)
@@ -120,12 +72,12 @@ def main(_):
         json.dump(flag_dict, f)
 
     # Make environment and datasets.
+    config = FLAGS.agent
     print(config)
     env, eval_env, train_dataset, val_dataset = make_env_and_datasets(FLAGS.env_name, frame_stack=FLAGS.frame_stack)
     if FLAGS.video_episodes > 0:
         assert 'singletask' in FLAGS.env_name, 'Rendering is currently only supported for OGBench environments.'
-    if FLAGS.online_steps > 0:
-        assert 'visual' not in FLAGS.env_name, 'Online fine-tuning is currently not supported for visual environments.'
+    assert 'visual' not in FLAGS.env_name, 'Online fine-tuning is currently not supported for visual environments.'
 
     # Initialize agent.
     random.seed(FLAGS.seed)
@@ -161,11 +113,13 @@ def main(_):
         config,
     )
 
-    # Restore agent.
-    if FLAGS.restore_path is not None:
-        agent = restore_agent(agent, FLAGS.restore_path, FLAGS.restore_epoch)
+    # Restore agent (required for online fine-tuning).
+    agent = restore_agent(agent, FLAGS.restore_path, FLAGS.restore_epoch)
+    
+    # Determine starting step (use restore_epoch if provided, otherwise start from 1)
+    start_step = FLAGS.restore_epoch if FLAGS.restore_epoch is not None else 1
 
-    # Train agent.
+    # Train agent (online fine-tuning only).
     train_logger = CsvLogger(os.path.join(FLAGS.save_dir, 'train.csv'))
     eval_logger = CsvLogger(os.path.join(FLAGS.save_dir, 'eval.csv'))
     first_time = time.time()
@@ -175,70 +129,58 @@ def main(_):
     done = True
     expl_metrics = dict()
     online_rng = jax.random.PRNGKey(FLAGS.seed)
-    train_step_times = []
+    
+    # Online fine-tuning loop
+    for i in tqdm.tqdm(range(start_step, start_step + FLAGS.online_steps + 1), smoothing=0.1, dynamic_ncols=True):
+        # Online fine-tuning.
+        online_rng, key = jax.random.split(online_rng)
 
-    for i in tqdm.tqdm(range(1, FLAGS.offline_steps + FLAGS.online_steps + 1), smoothing=0.1, dynamic_ncols=True):
-        if i <= FLAGS.offline_steps:
-            # Offline RL.
-            batch = train_dataset.sample(config['batch_size'])
-            
-            step_start_time = time.perf_counter()
-            if config['agent_name'] == 'rebrac' or config['agent_name'] == 'frebrac':
-                agent, update_info = agent.update(batch, full_update=(i % config['actor_freq'] == 0))
-            else:
-                agent, update_info = agent.update(batch)
-            step_elapsed_time = time.perf_counter() - step_start_time
-            train_step_times.append(step_elapsed_time)
-        else:
-            # Online fine-tuning.
-            online_rng, key = jax.random.split(online_rng)
+        if done:
+            step = 0
+            ob, _ = env.reset()
 
-            if done:
-                step = 0
-                ob, _ = env.reset()
+        action = agent.sample_actions(observations=ob, temperature=1, seed=key)
+        action = np.array(action)
 
-            action = agent.sample_actions(observations=ob, temperature=1, seed=key)
-            action = np.array(action)
+        next_ob, reward, terminated, truncated, info = env.step(action.copy())
+        done = terminated or truncated
 
-            next_ob, reward, terminated, truncated, info = env.step(action.copy())
-            done = terminated or truncated
+        if 'antmaze' in FLAGS.env_name and (
+            'diverse' in FLAGS.env_name or 'play' in FLAGS.env_name or 'umaze' in FLAGS.env_name
+        ):
+            # Adjust reward for D4RL antmaze.
+            reward = reward - 1.0
 
-            if 'antmaze' in FLAGS.env_name and (
-                'diverse' in FLAGS.env_name or 'play' in FLAGS.env_name or 'umaze' in FLAGS.env_name
-            ):
-                # Adjust reward for D4RL antmaze.
-                reward = reward - 1.0
-
-            replay_buffer.add_transition(
-                dict(
-                    observations=ob,
-                    actions=action,
-                    rewards=reward,
-                    terminals=float(done),
-                    masks=1.0 - terminated,
-                    next_observations=next_ob,
-                )
+        replay_buffer.add_transition(
+            dict(
+                observations=ob,
+                actions=action,
+                rewards=reward,
+                terminals=float(done),
+                masks=1.0 - terminated,
+                next_observations=next_ob,
             )
-            ob = next_ob
+        )
+        ob = next_ob
 
-            if done:
-                expl_metrics = {f'exploration/{k}': np.mean(v) for k, v in flatten(info).items()}
+        if done:
+            expl_metrics = {f'exploration/{k}': np.mean(v) for k, v in flatten(info).items()}
 
-            step += 1
+        step += 1
 
-            # Update agent.
-            if FLAGS.balanced_sampling:
-                # Half-and-half sampling from the training dataset and the replay buffer.
-                dataset_batch = train_dataset.sample(config['batch_size'] // 2)
-                replay_batch = replay_buffer.sample(config['batch_size'] // 2)
-                batch = {k: np.concatenate([dataset_batch[k], replay_batch[k]], axis=0) for k in dataset_batch}
-            else:
-                batch = replay_buffer.sample(config['batch_size'])
+        # Update agent.
+        if FLAGS.balanced_sampling:
+            # Half-and-half sampling from the training dataset and the replay buffer.
+            dataset_batch = train_dataset.sample(config['batch_size'] // 2)
+            replay_batch = replay_buffer.sample(config['batch_size'] // 2)
+            batch = {k: np.concatenate([dataset_batch[k], replay_batch[k]], axis=0) for k in dataset_batch}
+        else:
+            batch = replay_buffer.sample(config['batch_size'])
 
-            if config['agent_name'] == 'rebrac' or config['agent_name'] == 'frebrac':
-                agent, update_info = agent.update(batch, full_update=(i % config['actor_freq'] == 0))
-            else:
-                agent, update_info = agent.update(batch)
+        if config['agent_name'] == 'rebrac' or config['agent_name'] == 'frebrac':
+            agent, update_info = agent.update(batch, full_update=(i % config['actor_freq'] == 0))
+        else:
+            agent, update_info = agent.update(batch)
 
         # Log metrics.
         if i % FLAGS.log_interval == 0:
@@ -256,7 +198,7 @@ def main(_):
             train_logger.log(train_metrics, step=i)
 
         # Evaluate agent.
-        if FLAGS.eval_interval != 0 and (i == 1 or i % FLAGS.eval_interval == 0):
+        if FLAGS.eval_interval != 0 and (i == start_step or i % FLAGS.eval_interval == 0):
             renders = []
             eval_metrics = {}
             eval_info, trajs, cur_renders = evaluate(
@@ -266,7 +208,7 @@ def main(_):
                 num_eval_episodes=FLAGS.eval_episodes,
                 num_video_episodes=FLAGS.video_episodes,
                 video_frame_skip=FLAGS.video_frame_skip,
-                compute_eval_critic_loss=FLAGS.online_steps > 0,
+                compute_eval_critic_loss=True,  # Always True for online fine-tuning
             )
             renders.extend(cur_renders)
             for k, v in eval_info.items():
@@ -276,8 +218,8 @@ def main(_):
                 video = get_wandb_video(renders=renders)
                 eval_metrics['video'] = video
 
-            # Init noise evaluation for qflow agent
-            if FLAGS.eval_init_noise and config['agent_name'] == 'qflow':
+            # Init noise evaluation for fbrac_vd agent
+            if FLAGS.eval_init_noise and config['agent_name'] == 'fbrac_vd':
                 temperature_list = [float(x) for x in FLAGS.init_noise_temperatures]
                 init_noise_stats = evaluate_init_noise(
                     agent=agent,
@@ -302,9 +244,7 @@ def main(_):
     train_logger.close()
     eval_logger.close()
 
-    # Report training step time
-    print(f"Avg. step time: {np.mean(train_step_times)} seconds")
-
 
 if __name__ == '__main__':
     app.run(main)
+

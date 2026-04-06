@@ -39,49 +39,37 @@ class FQLAgent(flax.struct.PyTreeNode):
         q = self.network.select('critic')(batch['observations'], actions=batch['actions'], params=grad_params)
         critic_loss = jnp.square(q - target_q).mean()
 
-        # Value Jacobian regularization
-        jacobian_reg_loss = 0.0
-        jacobian_reg_coeff = self.config.get('value_jacobian_reg', 0.0)
-        if jacobian_reg_coeff > 0:
-            def q_fn(state):
-                qs = self.network.select('critic')(state[None, :], actions=batch['actions'][:1], params=grad_params)
-                if self.config['q_agg'] == 'min':
-                    return jnp.min(qs)
-                else:
-                    return jnp.mean(qs)
-            
-            jacobians = jax.vmap(jax.grad(q_fn))(batch['observations'])
-            jacobian_reg_loss = jnp.sum(jacobians**2, axis=-1)
-            
-            if self.config.get('weight_value_jacobian_reg', False):
-                # --- Q-value-based Weighting Logic ---
-                # 1. Get the Q-values for each state. Stop gradient to use it only for weighting.
-                q_values = self.network.select('critic')(batch['observations'], actions=batch['actions'])
-                if self.config['q_agg'] == 'min':
-                    q_for_weighting = jnp.min(q_values, axis=0)
-                else:
-                    q_for_weighting = jnp.mean(q_values, axis=0)
-                q_for_weighting = jax.lax.stop_gradient(q_for_weighting)
-
-                # 2. Calculate weights using softmax over negative values.
-                # Lower Q-value -> higher weight. Temperature controls sharpness.
-                weighting_temp = self.config.get('jacobian_weighting_temp', 1.0)
-                weights = jax.nn.softmax(-q_for_weighting / weighting_temp) * batch['observations'].shape[0]
-
-                # 3. Apply weights to the per-state penalty scores
-                jacobian_reg_loss = (weights * jacobian_reg_loss).mean()
-            else:
-                jacobian_reg_loss = jnp.mean(jacobian_reg_loss)
-
-            jacobian_reg_loss = jacobian_reg_coeff * jacobian_reg_loss
-            critic_loss += jacobian_reg_loss
-
         return critic_loss, {
             'critic_loss': critic_loss,
             'q_mean': q.mean(),
             'q_max': q.max(),
             'q_min': q.min(),
-            'value_jacb_reg_loss': jacobian_reg_loss,
+        }
+    
+    def eval_critic_loss(self, batch, seed):
+        """Compute the FQL critic loss for evaluation."""
+        rng, sample_rng = jax.random.split(seed)
+        next_actions = self.sample_actions(batch['next_observations'], seed=sample_rng)
+        next_actions = jnp.clip(next_actions, -1, 1)
+
+        next_qs = self.network.select('target_critic')(batch['next_observations'], actions=next_actions)
+        if self.config['q_agg'] == 'min':
+            next_q = next_qs.min(axis=0)
+        else:
+            next_q = next_qs.mean(axis=0)
+
+        target_q = batch['rewards'] + self.config['discount'] * batch['masks'] * next_q
+
+        q = self.network.select('critic')(batch['observations'], actions=batch['actions'])
+        critic_loss = jnp.square(q - target_q).mean()
+        return critic_loss, {
+            'critic_loss': critic_loss,
+            'q_mean': q.mean(),
+            'q_max': q.max(),
+            'q_min': q.min(),
+            'target_q_mean': target_q.mean(),
+            'target_q_max': target_q.max(),
+            'target_q_min': target_q.min(),
         }
 
     def actor_loss(self, batch, grad_params, rng):
@@ -192,7 +180,7 @@ class FQLAgent(flax.struct.PyTreeNode):
         actions = self.network.select('actor_onestep_flow')(observations, noises)
         actions = jnp.clip(actions, -1, 1)
         return actions
-
+    
     @jax.jit
     def compute_flow_actions(
         self,
@@ -240,27 +228,6 @@ class FQLAgent(flax.struct.PyTreeNode):
             _COMPILED_GRAD_FNS[energy_fn_id] = jax.jit(energy_grad_fn)
         
         return _COMPILED_GRAD_FNS[energy_fn_id]
-
-    def compute_guidance_gradient(self, observations, actions, energy_fn, guidance_coeff=1.0):
-        """
-        Compute the gradient of the energy function w.r.t. actions for guidance.
-        Now uses pre-compiled gradient function for better performance.
-        
-        Args:
-            observations: Current observations (batch_size, obs_dim)
-            actions: Current actions (batch_size, action_dim)
-            energy_fn: Energy function that takes (observations, actions) and returns energy values
-            guidance_coeff: Guidance strength coefficient
-            
-        Returns:
-            guidance_grad: Gradient of energy function w.r.t. actions (batch_size, action_dim)
-        """
-        # Get the pre-compiled gradient function
-        energy_grad_fn = self._get_energy_grad_fn(energy_fn)
-        
-        # Compute gradient using pre-compiled function
-        guidance_grad = energy_grad_fn(observations, actions)
-        return guidance_coeff * guidance_grad
 
     def sample_action_with_guidance(
         self,
@@ -375,7 +342,7 @@ class FQLAgent(flax.struct.PyTreeNode):
         critic_def = Value(
             hidden_dims=config['value_hidden_dims'],
             layer_norm=config['layer_norm'],
-            num_ensembles=2,
+            num_ensembles=config['critic_ensemble_size'],
             encoder=encoders.get('critic'),
         )
         actor_bc_flow_def = ActorVectorField(
@@ -434,10 +401,8 @@ def get_config():
             alpha=10.0,  # BC coefficient (need to be tuned for each environment).
             flow_steps=10,  # Number of flow steps.
             normalize_q_loss=False,  # Whether to normalize the Q loss.
-            value_jacobian_reg=0.0,  # Value Jacobian regularization coefficient.
-            weight_value_jacobian_reg=False,  # Weight value Jacobian regularization.
-            jacobian_weighting_temp=1.0,  # Temperature for Jacobian weighting.
             encoder=ml_collections.config_dict.placeholder(str),  # Visual encoder name (None, 'impala_small', etc.).
+            critic_ensemble_size=2,
         )
     )
     return config

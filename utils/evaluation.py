@@ -43,6 +43,7 @@ def evaluate(
     video_frame_skip=3,
     eval_temperature=0,
     render_always=False,
+    compute_eval_critic_loss=False,
     key=None,
 ):
     """Evaluate the agent in the environment.
@@ -59,9 +60,13 @@ def evaluate(
     Returns:
         A tuple containing the statistics, trajectories, and rendered videos.
     """
+    compute_eval_critic_loss=False
     if key is None:
         key = jax.random.PRNGKey(np.random.randint(0, 2**32))
     actor_fn = supply_rng(agent.sample_actions, rng=key)
+    if compute_eval_critic_loss:
+        eval_critic_loss_fn = supply_rng(agent.eval_critic_loss, rng=jax.random.PRNGKey(np.random.randint(0, 2**32)))
+    
     trajs = []
     stats = defaultdict(list)
 
@@ -113,7 +118,109 @@ def evaluate(
     for k, v in stats.items():
         stats[k] = np.mean(v)
 
+    
+    if compute_eval_critic_loss:    
+        # Efficiently flatten all fields from variable-length trajectories for sampling
+        eval_states = np.concatenate([np.asarray(traj['observation']) for traj in trajs], axis=0)
+        eval_actions = np.concatenate([np.asarray(traj['action']) for traj in trajs], axis=0)
+        eval_next_observations = np.concatenate([np.asarray(traj['next_observation']) for traj in trajs], axis=0)
+        eval_rewards = np.concatenate([np.asarray(traj['reward']) for traj in trajs], axis=0)
+        eval_masks = np.concatenate([np.asarray(traj['done']) for traj in trajs], axis=0) # if done is 1 mask is 0, if done is 0 mask is 1
+        eval_masks = 1 - eval_masks
+        eval_masks = eval_masks.reshape(-1)
+
+        # Now sample using the flattened arrays
+        eval_indices = np.random.choice(len(eval_states), 256, replace=False)
+
+        eval_critic_loss, eval_critic_loss_info = eval_critic_loss_fn(batch=dict(
+            observations=eval_states[eval_indices],
+            actions=eval_actions[eval_indices],
+            next_observations=eval_next_observations[eval_indices],
+            rewards=eval_rewards[eval_indices],
+            masks=eval_masks[eval_indices],
+        ))
+        for k, v in eval_critic_loss_info.items():
+            stats[k] = v
+
     return stats, trajs, renders
+
+
+def evaluate_init_noise(
+    agent,
+    env,
+    n_samples=16,
+    temperature_list=(0.1, 0.5, 1.0),
+    num_eval_episodes=50,
+    key=None,
+):
+    """Evaluate the agent using init noise sampling with multiple temperature values.
+    
+    This method efficiently evaluates init_noise sampling by:
+    1. JIT-compiling actor functions for each temperature value once
+    2. Running evaluation episodes for each temperature setting
+    3. Returning aggregated metrics for all settings
+    
+    Args:
+        agent: Agent with init_noise_sample_actions method.
+        env: Environment.
+        n_samples: Number of noise candidates to sample.
+        temperature_list: List of temperature values to test (lower = more greedy).
+        num_eval_episodes: Number of episodes to evaluate per temperature.
+        key: JAX random key.
+        
+    Returns:
+        all_stats: Dictionary mapping temperature to evaluation statistics.
+    """
+    if key is None:
+        key = jax.random.PRNGKey(np.random.randint(0, 2**32))
+    
+    all_stats = {}
+    
+    # Pre-compile actor functions for each temperature value
+    compiled_actors = {}
+    for temperature in temperature_list:
+        def make_init_noise_actor(temp):
+            def init_noise_actor_fn(observations, seed=None):
+                return agent.init_noise_sample_actions(
+                    observations=observations,
+                    seed=seed,
+                    n_samples=n_samples,
+                    temperature=temp,
+                )
+            return jax.jit(init_noise_actor_fn)
+        compiled_actors[temperature] = make_init_noise_actor(temperature)
+    
+    # Evaluate each temperature setting
+    for temperature in temperature_list:
+        key, eval_key = jax.random.split(key)
+        actor_fn = compiled_actors[temperature]
+        
+        stats = defaultdict(list)
+        
+        for i in range(num_eval_episodes):
+            eval_key, ep_key = jax.random.split(eval_key)
+            observation, info = env.reset(seed=i)
+            done = False
+            
+            while not done:
+                ep_key, action_key = jax.random.split(ep_key)
+                action = actor_fn(observations=observation, seed=action_key)
+                action = np.array(action)
+                action = np.clip(action, -1, 1)
+                
+                next_observation, reward, terminated, truncated, info = env.step(action)
+                done = terminated or truncated
+                observation = next_observation
+            
+            add_to(stats, flatten(info))
+        
+        # Aggregate statistics
+        for k, v in stats.items():
+            stats[k] = np.mean(v)
+        
+        all_stats[temperature] = dict(stats)
+    
+    return all_stats
 
 
 def evaluate_with_immediate_video_saving(

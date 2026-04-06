@@ -1,4 +1,5 @@
 import copy
+from functools import partial
 from typing import Any
 
 import flax
@@ -10,9 +11,6 @@ import optax
 from utils.encoders import encoder_modules
 from utils.flax_utils import ModuleDict, TrainState, nonpytree_field
 from utils.networks import ActorVectorField, Value
-
-# Global cache for compiled gradient functions
-_COMPILED_GRAD_FNS = {}
 
 
 class FBRACAgent(flax.struct.PyTreeNode):
@@ -63,37 +61,64 @@ class FBRACAgent(flax.struct.PyTreeNode):
         x_t = (1 - t) * x_0 + t * x_1
         vel = x_1 - x_0
 
+        loss_type = self.config['actor_loss_type']
+
+        # model prediction
         pred = self.network.select('actor_bc_flow')(observations, x_t, t, is_encoded=True, params=grad_params)
-        bc_flow_loss = jnp.mean((pred - vel) ** 2)
 
-        # Q loss.
-        rng, noise_rng = jax.random.split(rng)
-        noises = jax.random.normal(noise_rng, (batch_size, action_dim))
-        actor_actions = noises
-        
-        # action sampling over flow steps
-        for i in range(self.config['flow_steps']):
-            t = jnp.full((*observations.shape[:-1], 1), i / self.config['flow_steps'])
-            vels = self.network.select('actor_bc_flow')(observations, actor_actions, t, is_encoded=True, params=grad_params)
-            actor_actions = actor_actions + vels / self.config['flow_steps']
-        actor_actions = jnp.clip(actor_actions, -1, 1)
-        qs = self.network.select('critic')(batch['observations'], actions=actor_actions)
-        q = jnp.mean(qs, axis=0)
+        if loss_type == 'bptt':
+            bc_flow_loss = jnp.mean((pred - vel) ** 2)
 
-        q_loss = -q.mean()
-        if self.config['normalize_q_loss']:
-            lam = jax.lax.stop_gradient(1 / jnp.abs(q).mean())
-            q_loss = lam * q_loss
+            # Q loss.
+            rng, noise_rng = jax.random.split(rng)
+            noises = jax.random.normal(noise_rng, (batch_size, action_dim))
+            actor_actions = noises
+            
+            # action sampling over flow steps
+            for i in range(self.config['flow_steps']):
+                t = jnp.full((*observations.shape[:-1], 1), i / self.config['flow_steps'])
+                vels = self.network.select('actor_bc_flow')(observations, actor_actions, t, is_encoded=True, params=grad_params)
+                actor_actions = actor_actions + vels / self.config['flow_steps']
+            actor_actions = jnp.clip(actor_actions, -1, 1)
+            qs = self.network.select('critic')(batch['observations'], actions=actor_actions)
+            q = jnp.mean(qs, axis=0)
 
-        # Total loss.
-        actor_loss = self.config['alpha'] * bc_flow_loss + q_loss
+            q_loss = -q.mean()
+            if self.config['normalize_q_loss']:
+                lam = jax.lax.stop_gradient(1 / jnp.abs(q).mean())
+                q_loss = lam * q_loss
 
-        return actor_loss, {
-            'actor_loss': actor_loss,
-            'bc_flow_loss': bc_flow_loss,
-            'q_loss': q_loss,
-            'q': q.mean(),
-        }
+            # Total loss.
+            actor_loss = self.config['alpha'] * bc_flow_loss + q_loss
+
+            return actor_loss, {
+                'actor_loss': actor_loss,
+                'bc_flow_loss': bc_flow_loss,
+                'q_loss': q_loss,
+                'q': q.mean(),
+            }
+        elif loss_type == 'grad':
+            v_base = vel # analogous to u_t in value distillation implementaion
+            beta = 1.0 / (self.config['alpha'] + 1e-8)
+
+            # Local gradient computation
+            def value_sum_fn(x_in):
+                return jnp.sum(self.network.select('critic')(
+                    observations, x_in
+                ))
+            
+            grad_q = jax.grad(value_sum_fn)(x_t)
+            grad_q = jax.lax.stop_gradient(grad_q)
+
+            # Target vector to match the model vector field
+            v_target = v_base + beta * grad_q
+
+            total_loss = jnp.mean((pred - jax.lax.stop_gradient(v_target))**2)
+            info = {'total_loss': total_loss}
+            return total_loss, info
+
+        else:
+            raise ValueError(f"Invalid actor loss type: {loss_type}")
 
 
     @jax.jit
@@ -162,36 +187,6 @@ class FBRACAgent(flax.struct.PyTreeNode):
 
         return actions
 
-    def _get_energy_grad_fn(self, energy_fn):
-        """
-        Get or create a pre-compiled gradient function for the energy function.
-        This avoids recompiling the gradient computation in every flow step.
-        
-        Args:
-            energy_fn: Energy function that takes (observations, actions) and returns energy values
-            
-        Returns:
-            energy_grad_fn: Pre-compiled gradient function
-        """
-        # Create a unique key for this energy function (using its id)
-        energy_fn_id = id(energy_fn)
-        
-        # Use global module-level cache
-        global _COMPILED_GRAD_FNS
-        
-        if energy_fn_id not in _COMPILED_GRAD_FNS:
-            # Pre-compile the gradient function once with JIT compilation
-            def energy_grad_fn(observations, actions):
-                def energy_sum_fn(actions):
-                    energy_values = energy_fn(observations, actions)
-                    return jnp.sum(energy_values)
-                return jax.grad(energy_sum_fn)(actions)
-            
-            # JIT compile the gradient function for maximum performance
-            _COMPILED_GRAD_FNS[energy_fn_id] = jax.jit(energy_grad_fn)
-        
-        return _COMPILED_GRAD_FNS[energy_fn_id]
-
     def rejection_sample_actions(
         self,
         observations,
@@ -244,210 +239,6 @@ class FBRACAgent(flax.struct.PyTreeNode):
             actions = actions[chosen_idx]
 
         return actions
-        
-
-    def sample_action_with_guidance(
-        self,
-        observations,
-        energy_fn,
-        seed=None,
-        guidance_coeff=1.0,
-        temperature=1.0,
-        partial_guidance=-1,
-    ):
-        """
-        Sample actions from the policy with energy-based guidance.
-        
-        Args:
-            observations: Current observations
-            energy_fn: Energy function that takes (observations, actions) and returns energy values
-            seed: Random seed for sampling
-            guidance_coeff: Guidance strength coefficient
-            temperature: Sampling temperature
-            partial_guidance: If -1, apply guidance for entire sampling process.
-                            If > 0 and < flow_steps, apply guidance only to last {partial_guidance} steps.
-            
-        Returns:
-            actions: Sampled actions with guidance applied
-            energy_vals: List of energy values computed during sampling
-            gradient_vals: List of gradient values computed during sampling
-            cosine_sim_vals: List of cosine similarity values between Q-gradient and safety gradient
-        """
-        
-        # In place condition for experiment purpose
-        rescale_strategy="normalize" # to be move to guidance_evaluation main function
-        pred_clean=True
-        guidance_scheduling="fixed"
-        last_step_guidance=True
-
-        def get_guidance_strength(i, exp_k=5):
-            """
-            Treat the guidance_coeff as max strength
-            """
-            min_guidance = 1e-4
-
-            if guidance_scheduling == "fixed":
-                return guidance_coeff
-            elif guidance_scheduling == "neg_linear": # start from guidance_coeff and decrease linearly
-                return guidance_coeff - (guidance_coeff - min_guidance) * (i+1) / flow_steps
-            elif guidance_scheduling == "linear":
-                return min_guidance + (guidance_coeff - min_guidance) * (i+1) / flow_steps
-            elif guidance_scheduling == "exp":
-                factor = (jnp.exp((i+1)*exp_k/flow_steps) - 1)/(jnp.exp(exp_k) - 1)
-                return min_guidance + (guidance_coeff - min_guidance) * factor
-            else:
-                raise ValueError(f"Invalid guidance_scheduling: {guidance_scheduling}")
-        
-        # Original fixed guidance coefficient method
-        energy_vals = []
-        gradient_vals = []
-        cosine_sim_vals = []
-        action_seed, noise_seed = jax.random.split(seed)
-        noises = jax.random.normal(
-            action_seed,
-            (
-                *observations.shape[: -len(self.config['ob_dims'])],
-                self.config['action_dim'],
-            ),
-        )
-        actions = noises
-        # Initialize EMA for guidance gradient smoothing
-        ema_guidance = jnp.zeros_like(actions)
-        
-        # Determine when to apply guidance based on partial_guidance and last_step_guidance parameters
-        flow_steps = self.config['flow_steps']
-        if partial_guidance == -1:
-            # Apply guidance for entire sampling process
-            guidance_start_step = 0
-            guidance_end_step = flow_steps
-        elif 0 < partial_guidance < flow_steps:
-            # Apply guidance to partial steps based on last_step_guidance flag
-            if last_step_guidance:
-                # Apply guidance only to last {partial_guidance} steps
-                guidance_start_step = flow_steps - partial_guidance
-                guidance_end_step = flow_steps
-            else:
-                # Apply guidance only to first {partial_guidance} steps
-                guidance_start_step = 0
-                guidance_end_step = partial_guidance
-        else:
-            # Invalid partial_guidance value, default to no guidance
-            guidance_start_step = flow_steps
-            guidance_end_step = flow_steps
-            print(f"Warning: Invalid partial_guidance value {partial_guidance}. Using no guidance.")
-        
-        # Pre-compile the gradient function once for better performance (only if we'll use guidance)
-        energy_grad_fn = None
-        if guidance_start_step < flow_steps:
-            try:
-                energy_grad_fn = self._get_energy_grad_fn(energy_fn)
-            except Exception as e:
-                print(f"Error pre-compiling gradient function: {e}")
-                energy_grad_fn = None
-        
-        # Apply flow steps with conditional guidance
-        for i in range(flow_steps):
-            t = jnp.full((*observations.shape[:-1], 1), i / flow_steps)
-            
-            # Get the flow velocity from the actor
-            vels = self.network.select('actor_bc_flow')(observations, actions, t)
-
-            guidance_weight = get_guidance_strength(i)
-
-            # Only compute energy and guidance if guidance_coeff is not zero and energy > -5
-            # Use JAX conditional operations for JIT compatibility
-            def apply_guidance():
-                if energy_grad_fn is not None:
-                    # safety_grad = energy_grad_fn(observations, target_actions)
-
-                    # Compute Q value at target_actions, but gradient w.r.t. current actions
-                    def q_fn_at_target(a_t):
-                        if pred_clean:
-                            # Compute target_actions from a_t
-                            a_1 = a_t + (1 - t) * vels
-                            a_1 = jnp.clip(a_1, -1, 1)
-                        else:
-                            a_1 = a_t
-                        qs = self.network.select('critic')(observations, a_1)
-                        return jnp.mean(qs)
-                    
-                    q_grad = jax.grad(q_fn_at_target)(actions)  # Gradient w.r.t. a_t
-
-                    # guidance_grad = q_grad/jnp.linalg.norm(q_grad) - safety_grad/jnp.linalg.norm(safety_grad) # to match a scale
-                    guidance_grad = q_grad
-
-                    if rescale_strategy == "normalize":
-                        guidance_grad = guidance_grad / (1e-8 + jnp.linalg.norm(guidance_grad))
-                    
-                    return guidance_grad, 0.0
-                else:
-                    return jnp.zeros_like(vels), 0.0
-            
-            def no_guidance():
-                return jnp.zeros_like(vels), 0.0
-            
-            # Check if we should apply guidance
-            should_apply = (guidance_coeff != 0.0 and 
-                          i >= guidance_start_step and 
-                          i < guidance_end_step and
-                          energy_grad_fn is not None)
-
-                          
-            # Use JAX conditional to choose guidance or no guidance
-            # guidance_grad_raw, _ = jax.lax.cond(
-            #     should_apply,
-            #     apply_guidance,
-            #     no_guidance
-            # )
-            
-            # Exponential Moving Average smoothing
-            # beta_t = 0.3 + (0.9 - 0.3) * (i / flow_steps)
-            # ema_guidance = beta_t * ema_guidance + (1 - beta_t) * guidance_grad_raw
-            
-            # # Blend raw gradient with EMA
-            # rho = 0.5  # 0.3-0.7 works well
-            # guidance_grad = (1 - rho) * guidance_grad_raw + rho * ema_guidance
-            
-            # # Check for NaN/Inf in guidance gradient
-            # guidance_grad = jnp.where(
-            #     jnp.isnan(guidance_grad) | jnp.isinf(guidance_grad),
-            #     0.0,
-            #     guidance_grad
-            # )
-            # guidance_grad = jnp.clip(guidance_weight*guidance_grad, -1, 1)
-            # gradient_vals.append(guidance_grad)
-            # cosine_sim_vals.append(0.0)
-            # guided_vels = vels + guidance_grad
-            
-            # # Update actions
-            # actions = actions + guided_vels / flow_steps
-            
-            # Use JAX conditional to choose guidance or no guidance
-            guidance_grad, _ = jax.lax.cond(
-                should_apply,
-                apply_guidance,
-                no_guidance
-            )
-            
-            # Check for NaN/Inf in guidance gradient
-            guidance_grad = jnp.where(
-                jnp.isnan(guidance_grad) | jnp.isinf(guidance_grad),
-                0.0,
-                guidance_grad
-            )
-            guidance_grad = jnp.clip(guidance_grad, -1, 1)
-
-            gradient_vals.append(guidance_grad)
-            cosine_sim_vals.append(0.0)
-            guided_vels = vels + guidance_weight * guidance_grad
-            
-            # Update actions
-            actions = actions + guided_vels / flow_steps
-
-            energy_vals.append(0.0)
-        
-        actions = jnp.clip(actions, -1, 1)
-        return actions, energy_vals, gradient_vals, cosine_sim_vals
 
     @classmethod
     def create(
@@ -538,6 +329,7 @@ def get_config():
             reward_scale=1.0,  # Reward scale.
             encoder=ml_collections.config_dict.placeholder(str),  # Visual encoder name (None, 'impala_small', etc.).
             num_samples=32, # Number of action samples for rejection sampling
+            actor_loss_type="bptt",
         )
     )
     return config

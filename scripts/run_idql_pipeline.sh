@@ -28,7 +28,7 @@ save_values=false
 lyapunov_model_path="/mnt/nas/jaehyeok/fql/exp/lyapunov/LyapunovTraining/lyapunov_antmaze-large-navigate-singletask-task1-v0_sd000_20250916_202904"
 lyapunov_model_path="/mnt/nas/jaehyeok/fql/exp/lyapunov/LyapunovTraining/lyapunov_humanoidmaze-medium-navigate-singletask-task1-v0_sd000_20250916_200152"
 lyapunov_model_step="1000000"
-guidance_coeffs="0.1,0.5,1.0"
+guidance_coeffs="0.05"
 eval_episodes=50
 
 start_seed=0
@@ -88,7 +88,7 @@ for seed in $(seq $start_seed $end_seed); do
     echo "Results will be saved to: ${eval_dir}"
     
     mkdir -p "$eval_dir"
-    for partial_guidance in 1 2 3 5; do
+    for partial_guidance in 0 1 3 5 7 9; do
     
     python guidance_evaluation.py \
         --env_name="$env_name" \
