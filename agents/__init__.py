@@ -9,13 +9,13 @@ from agents.fawac import FAWACAgent
 from agents.qipo import QIPOAgent
 
 agents = dict(
-    fql=FQLAgent,
-    ifql=IFQLAgent,
-    iql=IQLAgent,
-    fbrac=FBRACAgent,
-    rebrac=ReBRACAgent,
     sac=SACAgent,
-    qflow=QFlowAgent,
+    iql=IQLAgent,
+    rebrac=ReBRACAgent,
+    qipo=QIPOAgent,
     fawac=FAWACAgent,
-    qipo=QIPOAgent
+    fbrac=FBRACAgent,
+    ifql=IFQLAgent,
+    fql=FQLAgent,
+    qflow=QFlowAgent,
 )
