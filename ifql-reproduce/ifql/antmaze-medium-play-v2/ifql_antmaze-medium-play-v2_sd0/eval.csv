@@ -1,3 +1,4 @@
 evaluation/total.timesteps,evaluation/episode.final_reward,evaluation/episode.return,evaluation/episode.length,evaluation/episode.duration,evaluation/episode.normalized_return,step
 25500.0,0.0,0.0,1000.0,1.4981895446777345,0.0,1
 72528.0,0.22,0.22,904.16,1.24236328125,22.0,100000
+115290.78,0.46,0.46,744.68,1.0305963087081909,46.0,200000
