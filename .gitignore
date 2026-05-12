@@ -18,3 +18,5 @@ ifql-reproduce
 fawac-reproduce
 rebuttal
 online_finetuning
+*.png
+*.pdf

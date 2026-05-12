@@ -31,10 +31,10 @@ for task_idx in $(seq $start_task_idx $end_task_idx); do
     # env_name="puzzle-4x4-play-singletask-task${task_idx}-v0"
 
     env_name="antmaze-umaze-v2"
-    # env_name="antmaze-umaze-diverse-v2"
-    # env_name="antmaze-medium-play-v2"
-    # env_name="antmaze-medium-diverse-v2"
-    # env_name="antmaze-large-play-v2"
+    env_name="antmaze-umaze-diverse-v2"
+    env_name="antmaze-medium-play-v2"
+    env_name="antmaze-medium-diverse-v2"
+    env_name="antmaze-large-play-v2"
     env_name="antmaze-large-diverse-v2"
 
     # env_name="antmaze-giant-stitch-singletask-task${task_idx}-v0"
