@@ -1,6 +1,6 @@
-# Q-Flow
+# QFlow
 
-Q-Flow is a Q-learning method with flow-based policy that explicitly learns the value over noisy latent states and guide the generative process with the learend value to maximize the return.
+QFlow is a flow-matching offline RL algorithm that uses Q-value gradients to guide the flow actor toward high-value actions during inference.
 
 ## Installation
 

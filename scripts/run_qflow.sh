@@ -21,7 +21,7 @@ for task_idx in $(seq $start_task_idx $end_task_idx); do
 
     # Environment settings - uncomment the environment you want to run
     # env_name="antmaze-large-navigate-singletask-task${task_idx}-v0"
-    env_name="antmaze-giant-navigate-singletask-task${task_idx}-v0"
+    # env_name="antmaze-giant-navigate-singletask-task${task_idx}-v0"
     # env_name="humanoidmaze-medium-navigate-singletask-task${task_idx}-v0"
     # env_name="humanoidmaze-large-navigate-singletask-task${task_idx}-v0"
     # env_name="antsoccer-arena-navigate-singletask-task${task_idx}-v0"
@@ -31,13 +31,12 @@ for task_idx in $(seq $start_task_idx $end_task_idx); do
     # env_name="puzzle-3x3-play-singletask-task${task_idx}-v0"
     # env_name="puzzle-4x4-play-singletask-task${task_idx}-v0"
 
-    # D4RL Antmaze
     # env_name="antmaze-umaze-v2"
     # env_name="antmaze-umaze-diverse-v2"
     # env_name="antmaze-medium-play-v2"
     # env_name="antmaze-medium-diverse-v2"
-    # env_name="antmaze-large-play-v2"
-    # env_name="antmaze-large-diverse-v2"
+    env_name="antmaze-large-play-v2"
+    env_name="antmaze-large-diverse-v2"
     
 
     # stitch datasets
@@ -55,13 +54,13 @@ for task_idx in $(seq $start_task_idx $end_task_idx); do
     flow_steps=10
     batch_size=256
     num_ensembles=2
-    layer_width=512 # D4RL: 256
+    layer_width=256 # D4RL: 256
     eval_init_noise=false
 
     # Override hyperparameters
-    override_params=False
+    override_params=True
     time_embed_dim=16
-    alpha=20
+    alpha=0.1
     discount=0.99
     q_agg="mean"
 
@@ -70,7 +69,7 @@ for task_idx in $(seq $start_task_idx $end_task_idx); do
         seeds="0"
         echo "DEBUG MODE: Using only seed 10001"
     else
-        seeds="0 1 2 3"
+        seeds="4 5 6 7"
     fi
 
     for seed in $seeds; do

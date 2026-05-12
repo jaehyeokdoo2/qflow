@@ -10,7 +10,7 @@ QFLOW_PARAMS = {
     "antmaze-large-navigate": dict(
         alpha=0.2,
         use_time_embed=True,
-        time_embed_dim=16,
+        time_embed_dim=64,
         q_agg='mean',
         actor_loss_type="grad",
         discount=0.99,
@@ -18,7 +18,7 @@ QFLOW_PARAMS = {
     "antmaze-giant-navigate": dict(
         alpha=0.2,
         use_time_embed=True,
-        time_embed_dim=16,
+        time_embed_dim=64,
         q_agg='min',
         actor_loss_type="grad",
         discount=0.995,
@@ -26,7 +26,7 @@ QFLOW_PARAMS = {
     "antsoccer-arena-navigate": dict(
         alpha=0.5,
         use_time_embed=True,
-        time_embed_dim=16,
+        time_embed_dim=64,
         q_agg='mean',
         actor_loss_type="grad",
         discount=0.995,
@@ -34,7 +34,7 @@ QFLOW_PARAMS = {
     "humanoidmaze-medium-navigate": dict(
         alpha=1,
         use_time_embed=True,
-        time_embed_dim=16,
+        time_embed_dim=64,
         q_agg='mean',
         actor_loss_type="grad",
         discount=0.995,
@@ -42,7 +42,7 @@ QFLOW_PARAMS = {
     "humanoidmaze-large-navigate": dict(
         alpha=1,
         use_time_embed=True,
-        time_embed_dim=16,
+        time_embed_dim=64,
         q_agg='mean',
         actor_loss_type="grad",
         discount=0.995,
@@ -50,7 +50,7 @@ QFLOW_PARAMS = {
     "cube-single-play": dict(
         alpha=5,
         use_time_embed=True,
-        time_embed_dim=16,
+        time_embed_dim=64,
         q_agg='mean',
         actor_loss_type="grad",
         discount=0.99,
@@ -66,7 +66,7 @@ QFLOW_PARAMS = {
     "scene-play": dict(
         alpha=5,
         use_time_embed=True,
-        time_embed_dim=16,
+        time_embed_dim=64,
         q_agg='mean',
         actor_loss_type="grad",
         discount=0.99,
@@ -74,7 +74,7 @@ QFLOW_PARAMS = {
     "puzzle-3x3-play": dict(
         alpha=20,
         use_time_embed=True,
-        time_embed_dim=16,
+        time_embed_dim=64,
         q_agg='min',
         actor_loss_type="grad",
         discount=0.99,
@@ -82,7 +82,7 @@ QFLOW_PARAMS = {
     "puzzle-4x4-play": dict(
         alpha=20,
         use_time_embed=True,
-        time_embed_dim=16,
+        time_embed_dim=64,
         q_agg='min',
         actor_loss_type="grad",
         discount=0.99,
