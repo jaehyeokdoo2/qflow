@@ -27,7 +27,8 @@ def train_fql(x_1_data, rewards_data, epochs=2000, lr=1e-3, flow_steps=10, hidde
     k1, k2, k3 = jrandom.split(key, 3)
 
     # Networks: policy (flow) and outer critic
-    flow_params = init_mlp([2, hidden, hidden, 2], k1)
+    # Flow input: [x (2D) + t (1D)] = 3D
+    flow_params = init_mlp([3, hidden, hidden, 2], k1)
     critic_params = init_mlp([2, hidden // 2, 1], k2)
 
     def flow_forward(params, x, t):
@@ -106,7 +107,9 @@ def train_fbrac(x_1_data, rewards_data, epochs=2000, lr=1e-3, flow_steps=10, hid
 
     k1, k2, k3 = jrandom.split(key, 3)
 
-    flow_params = init_mlp([2, hidden, hidden, 2], k1)
+    # Networks: policy (flow) and outer critic
+    # Flow input: [x (2D) + t (1D)] = 3D
+    flow_params = init_mlp([3, hidden, hidden, 2], k1)
     critic_params = init_mlp([2, hidden // 2, 1], k2)
 
     def flow_forward(params, x, t):
@@ -203,7 +206,9 @@ def train_qflow(x_1_data, rewards_data, epochs=2000, lr=1e-3, flow_steps=10, hid
 
     k1, k2, k3, k4 = jrandom.split(key, 4)
 
-    flow_params = init_mlp([2, hidden, hidden, 2], k1)
+    # Networks: policy (flow) and critics
+    # Flow input: [x (2D) + t (1D)] = 3D
+    flow_params = init_mlp([3, hidden, hidden, 2], k1)
     inner_critic_params = init_mlp([2, hidden // 2, 1], k2)
     outer_critic_params = init_mlp([2, hidden // 2, 1], k3)
 
