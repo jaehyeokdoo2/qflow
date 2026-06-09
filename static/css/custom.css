@@ -31,6 +31,98 @@ body {
     opacity: 0.95;
 }
 
+/* Publication Title and Authors */
+.publication-title {
+    color: #ffffff;
+    margin-bottom: 1.5rem;
+}
+
+.publication-authors {
+    color: #ffffff;
+    margin-bottom: 0.5rem;
+}
+
+.publication-authors a {
+    color: #ffffff;
+    text-decoration: underline;
+}
+
+.publication-authors a:hover {
+    opacity: 0.8;
+}
+
+.publication-venue {
+    color: rgba(255, 255, 255, 0.9);
+    margin-bottom: 1rem;
+}
+
+.publication-links {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.link-block {
+    margin: 0.25rem;
+}
+
+.external-link {
+    background-color: #ffffff;
+    color: #2366d1;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.external-link:hover {
+    background-color: #f5f5f5;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Teaser Section */
+.hero.teaser {
+    padding: 3rem 1.5rem;
+    background-color: #fafafa;
+}
+
+.teaser-placeholder {
+    background-color: var(--light-background);
+    border-radius: 8px;
+    padding: 3rem 1.5rem;
+    text-align: center;
+    color: #999;
+    margin-bottom: 1.5rem;
+    min-height: 200px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.placeholder-media {
+    background-color: var(--light-background);
+    border-radius: 8px;
+    padding: 2rem;
+    text-align: center;
+    color: #999;
+    margin: 1.5rem 0;
+    min-height: 200px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Section Divider */
+.section-divider {
+    margin: 0;
+    padding: 0;
+}
+
+.section-divider hr {
+    margin: 0;
+    border-top: 1px solid #e5e5e5;
+}
+
 /* Sections */
 .section {
     padding: 4rem 1.5rem;
@@ -87,6 +179,12 @@ pre {
     overflow-x: auto;
     font-size: 0.875rem;
     line-height: 1.4;
+}
+
+pre.bibtex-block {
+    border-left: 4px solid var(--primary-color);
+    background-color: #f9f9f9;
+    padding: 1.5rem;
 }
 
 code {
@@ -181,18 +279,50 @@ pre code {
 /* Responsive Design */
 @media screen and (max-width: 768px) {
     .hero .title {
-        font-size: 2.5rem;
+        font-size: 2rem;
     }
 
     .hero .subtitle {
         font-size: 1.25rem;
     }
 
+    .publication-title {
+        font-size: 1.75rem !important;
+    }
+
+    .publication-authors {
+        font-size: 0.95rem !important;
+    }
+
+    .publication-links {
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .link-block {
+        width: 100%;
+        max-width: 300px;
+    }
+
     .section .title {
         font-size: 2rem;
     }
 
+    .section .title.is-3 {
+        font-size: 1.75rem;
+    }
+
+    .section .title.is-4 {
+        font-size: 1.5rem;
+    }
+
     .section {
         padding: 3rem 1rem;
+    }
+
+    .placeholder-media,
+    .teaser-placeholder {
+        min-height: 150px;
+        padding: 1.5rem;
     }
 }

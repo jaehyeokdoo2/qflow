@@ -5,179 +5,225 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>QFlow - Offline Reinforcement Learning Framework</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.0/css/bulma.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css">
     <link rel="stylesheet" href="static/css/custom.css">
 </head>
 <body>
-    <!-- Navigation -->
-    <nav class="navbar is-transparent" role="navigation" aria-label="main navigation">
-        <div class="navbar-brand">
-            <a class="navbar-item" href="#home">
-                <strong>QFlow</strong>
-            </a>
-        </div>
-        <div class="navbar-menu">
-            <div class="navbar-end">
-                <a class="navbar-item" href="#about">About</a>
-                <a class="navbar-item" href="#method">Method</a>
-                <a class="navbar-item" href="#results">Results</a>
-                <a class="navbar-item" href="#code">Code</a>
-            </div>
-        </div>
-    </nav>
 
-    <!-- Hero Section -->
-    <section class="hero is-large is-primary" id="home">
+    <!-- ===== HERO ===== -->
+    <section class="hero is-primary is-large">
         <div class="hero-body">
-            <div class="container">
-                <h1 class="title">QFlow</h1>
-                <p class="subtitle">A Framework for Offline Reinforcement Learning</p>
-                <p class="content">
-                    QFlow is an innovative approach to offline reinforcement learning that combines
-                    quality-weighted learning with advanced policy optimization techniques.
-                </p>
-                <div class="buttons">
-                    <a class="button is-info" href="#method">Learn More</a>
-                    <a class="button is-light" href="https://github.com" target="_blank">View on GitHub</a>
-                </div>
-            </div>
-        </div>
-    </section>
+            <div class="container is-max-desktop">
+                <div class="columns is-centered">
+                    <div class="column has-text-centered">
 
-    <!-- About Section -->
-    <section class="section" id="about">
-        <div class="container">
-            <h2 class="title">About QFlow</h2>
-            <div class="columns">
-                <div class="column is-two-thirds">
-                    <div class="content">
-                        <p>
-                            QFlow addresses the challenge of learning optimal policies from offline datasets
-                            without interactions with the environment. The framework introduces a novel approach to
-                            handling distribution shift and data heterogeneity in offline RL.
-                        </p>
-                        <p>
-                            Key features include:
-                        </p>
-                        <ul>
-                            <li>Quality-weighted learning mechanism</li>
-                            <li>Flexible agent architecture</li>
-                            <li>Support for multiple RL algorithms (IQL, FBRAC, FQL, etc.)</li>
-                            <li>Comprehensive evaluation framework</li>
-                            <li>Easy-to-use configuration system</li>
-                        </ul>
-                    </div>
-                </div>
-                <div class="column">
-                    <figure class="image">
-                        <img src="static/images/placeholder.png" alt="QFlow Architecture" style="border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                    </figure>
-                </div>
-            </div>
-        </div>
-    </section>
+                        <h1 class="title is-1 publication-title">
+                            QFlow: Offline Reinforcement Learning with Quality-Weighted Learning
+                        </h1>
 
-    <!-- Method Section -->
-    <section class="section is-light" id="method">
-        <div class="container">
-            <h2 class="title">Method</h2>
-            <div class="content">
-                <p>
-                    Our approach builds on recent advances in offline RL while introducing novel mechanisms
-                    for quality-aware learning. The core innovation lies in:
-                </p>
-                <div class="box">
-                    <h4 class="subtitle is-5">Quality-Weighted Policy Learning</h4>
-                    <p>
-                        We propose a method that explicitly incorporates trajectory quality signals into
-                        the learning process, allowing the agent to learn preferentially from high-quality
-                        data while remaining robust to poor quality samples.
-                    </p>
-                </div>
-                <div class="box">
-                    <h4 class="subtitle is-5">Distribution Shift Handling</h4>
-                    <p>
-                        QFlow employs advanced techniques to mitigate distribution shift between the
-                        offline dataset and the learned policy, ensuring stable and efficient learning.
-                    </p>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Results Section -->
-    <section class="section" id="results">
-        <div class="container">
-            <h2 class="title">Experimental Results</h2>
-            <div class="content">
-                <p>
-                    We evaluate QFlow on a variety of benchmark datasets and tasks:
-                </p>
-            </div>
-
-            <div class="columns">
-                <div class="column is-half">
-                    <div class="box">
-                        <p class="heading">D4RL Benchmarks</p>
-                        <figure class="image">
-                            <img src="static/images/results_placeholder.png" alt="D4RL Results">
-                        </figure>
-                    </div>
-                </div>
-                <div class="column is-half">
-                    <div class="box">
-                        <p class="heading">Performance Metrics</p>
-                        <div class="content">
-                            <table class="table is-striped is-hoverable">
-                                <tbody>
-                                    <tr>
-                                        <td><strong>Dataset</strong></td>
-                                        <td><strong>Success Rate</strong></td>
-                                    </tr>
-                                    <tr>
-                                        <td>AntMaze Medium</td>
-                                        <td>85%</td>
-                                    </tr>
-                                    <tr>
-                                        <td>Kitchen Mixed</td>
-                                        <td>92%</td>
-                                    </tr>
-                                    <tr>
-                                        <td>Locomotion Medium</td>
-                                        <td>78%</td>
-                                    </tr>
-                                </tbody>
-                            </table>
+                        <div class="is-size-5 publication-authors">
+                            <span class="author-block"><a href="#">JaeHyeok Doo</a>,</span>
+                            <span class="author-block"><a href="#">Co-authors</a></span>
                         </div>
+
+                        <div class="is-size-6 publication-venue mt-2">2026</div>
+
+                        <div class="publication-links mt-4">
+                            <span class="link-block">
+                                <a href="#" target="_blank"
+                                   class="external-link button is-normal is-rounded is-dark">
+                                    <span class="icon"><i class="fas fa-file-pdf"></i></span>
+                                    <span>Paper</span>
+                                </a>
+                            </span>
+                            <span class="link-block">
+                                <a href="https://github.com" target="_blank"
+                                   class="external-link button is-normal is-rounded is-dark">
+                                    <span class="icon"><i class="fab fa-github"></i></span>
+                                    <span>Code</span>
+                                </a>
+                            </span>
+                        </div>
+
                     </div>
                 </div>
             </div>
         </div>
     </section>
 
-    <!-- Code Section -->
-    <section class="section is-light" id="code">
-        <div class="container">
-            <h2 class="title">Getting Started</h2>
+    <!-- ===== TEASER ===== -->
+    <section class="hero teaser">
+        <div class="container is-max-desktop">
+            <div class="hero-body">
+                <div class="placeholder-media teaser-placeholder">
+                    <p>Teaser · Key insight visualization or video</p>
+                </div>
+                <h2 class="subtitle has-text-centered mt-4">
+                    QFlow combines <strong>quality-weighted learning</strong> with <strong>advanced policy optimization</strong>
+                    to achieve stable and efficient offline RL without excessive distribution shift.
+                </h2>
+            </div>
+        </div>
+    </section>
+
+    <div class="section-divider"><hr /></div>
+
+    <!-- ===== CHALLENGE ===== -->
+    <section class="section">
+        <div class="container is-max-desktop">
+            <h2 class="title is-3">Challenge: Offline RL Dilemma</h2>
+            <div class="content">
+                <p>
+                    Offline reinforcement learning faces a fundamental challenge: learning optimal policies from fixed datasets
+                    without interaction with the environment. The key challenges are:
+                </p>
+                <ul>
+                    <li>
+                        <strong>Distribution Shift</strong> — The learned policy may diverge from the behavior policy,
+                        leading to poor generalization on out-of-distribution actions.
+                    </li>
+                    <li>
+                        <strong>Data Quality Heterogeneity</strong> — Real datasets contain trajectories of varying quality,
+                        from near-optimal to random exploration.
+                    </li>
+                    <li>
+                        <strong>Value Extrapolation Error</strong> — Standard value function approximation can lead to
+                        overestimation on unseen state-action pairs.
+                    </li>
+                </ul>
+            </div>
+            <div class="placeholder-media">
+                <p>[Placeholder] Problem illustration or comparison figure</p>
+            </div>
+        </div>
+    </section>
+
+    <div class="section-divider"><hr /></div>
+
+    <!-- ===== METHOD ===== -->
+    <section class="section">
+        <div class="container is-max-desktop">
+            <h2 class="title is-3">QFlow: Quality-Weighted Policy Learning</h2>
+            <div class="content">
+                <p>
+                    QFlow addresses these challenges through a novel approach that explicitly incorporates
+                    trajectory quality signals into the learning process. The key innovation lies in:
+                </p>
+                <p>
+                    <strong>Quality-Weighted Learning Mechanism:</strong>
+                    We weight learning signals by estimated trajectory quality, allowing the agent to learn
+                    preferentially from high-quality data while remaining robust to poor quality samples.
+                </p>
+                <p>
+                    <strong>Advanced Policy Optimization:</strong>
+                    QFlow combines quality-aware learning with state-of-the-art policy optimization techniques
+                    to ensure stable convergence and efficient training.
+                </p>
+                <p>
+                    <strong>Flexible Agent Architecture:</strong>
+                    The framework supports multiple underlying RL algorithms (IQL, FBRAC, FQL, etc.),
+                    allowing practitioners to choose the right tool for their specific problem.
+                </p>
+            </div>
+            <div class="placeholder-media">
+                <p>[Placeholder] Method diagram / algorithm overview</p>
+            </div>
+        </div>
+    </section>
+
+    <div class="section-divider"><hr /></div>
+
+    <!-- ===== RESULTS ===== -->
+    <section class="section">
+        <div class="container is-max-desktop">
+            <h2 class="title is-3">Experimental Results</h2>
+
+            <h3 class="title is-4">D4RL Benchmarks</h3>
+            <div class="content">
+                <p>
+                    QFlow demonstrates strong performance across standard D4RL benchmark environments,
+                    achieving consistent improvements over baseline methods.
+                </p>
+            </div>
+            <div class="placeholder-media">
+                <p>[Placeholder] D4RL results table — AntMaze, Kitchen, Locomotion</p>
+            </div>
+
+            <h3 class="title is-4 mt-5">OGBench Evaluation</h3>
+            <div class="content">
+                <p>
+                    On challenging robotic manipulation tasks from OGBench, QFlow shows significant gains
+                    over prior offline RL methods, particularly on complex navigation tasks.
+                </p>
+            </div>
+            <div class="placeholder-media">
+                <p>[Placeholder] OGBench results figure</p>
+            </div>
+
+            <h3 class="title is-4 mt-5">Ablation Studies</h3>
+            <div class="content">
+                <p>
+                    Ablation studies verify the importance of each component:
+                </p>
+                <ul>
+                    <li><strong>Quality Weighting:</strong> Validates the contribution of trajectory quality signals</li>
+                    <li><strong>Aggregation Methods:</strong> Compares different Q-value aggregation strategies</li>
+                    <li><strong>Hyperparameter Sensitivity:</strong> Demonstrates robustness across configurations</li>
+                </ul>
+            </div>
+            <div class="placeholder-media">
+                <p>[Placeholder] Ablation study results</p>
+            </div>
+
+        </div>
+    </section>
+
+    <div class="section-divider"><hr /></div>
+
+    <!-- ===== USAGE ===== -->
+    <section class="section">
+        <div class="container is-max-desktop">
+            <h2 class="title is-3">Getting Started</h2>
             <div class="content">
                 <h4 class="subtitle is-5">Installation</h4>
-                <pre><code>git clone https://github.com/yourname/qflow.git
+                <pre><code>git clone https://github.com/yourusername/qflow.git
 cd qflow
-pip install -e .</code></pre>
+pip install -r requirements.txt</code></pre>
 
-                <h4 class="subtitle is-5">Quick Example</h4>
-                <pre><code>python main.py --config qflow_config.py \
-    --dataset_name d4rl:antmaze-medium-play-v2 \
-    --seed 0</code></pre>
+                <h4 class="subtitle is-5">Quick Start</h4>
+                <pre><code>python main.py --env_name=antmaze-medium-play-v2 --agent=agents/qflow.py</code></pre>
+
+                <h4 class="subtitle is-5">Configuration</h4>
+                <p>
+                    QFlow hyperparameters are managed in <code>qflow_config.py</code>.
+                    Per-domain configurations are automatically loaded based on the environment name.
+                </p>
 
                 <p style="margin-top: 1.5rem;">
-                    For more information, visit the
-                    <a href="https://github.com" target="_blank">GitHub repository</a>.
+                    For more details, visit the <a href="https://github.com" target="_blank">GitHub repository</a>
+                    or see the README.
                 </p>
             </div>
         </div>
     </section>
 
-    <!-- Footer -->
+    <div class="section-divider"><hr /></div>
+
+    <!-- ===== CITATION ===== -->
+    <section class="section">
+        <div class="container is-max-desktop">
+            <h2 class="title is-3">BibTeX</h2>
+            <pre class="bibtex-block">@article{doo2026qflow,
+  title   = {QFlow: Offline Reinforcement Learning with Quality-Weighted Learning},
+  author  = {JaeHyeok Doo and others},
+  journal = {arXiv preprint},
+  year    = {2026}
+}</pre>
+        </div>
+    </section>
+
+    <!-- ===== FOOTER ===== -->
     <footer class="footer">
         <div class="content has-text-centered">
             <p>
