@@ -60,11 +60,12 @@
         <div class="container is-max-desktop">
             <div class="hero-body">
                 <div class="placeholder-media teaser-placeholder">
-                    <p>Teaser · Key insight visualization or video</p>
+                    <p>Teaser · toy experiment video or figure (Swiss roll / Two spirals)</p>
                 </div>
                 <h2 class="subtitle has-text-centered mt-4">
-                    QFlow combines <strong>quality-weighted learning</strong> with <strong>advanced policy optimization</strong>
-                    to achieve stable and efficient offline RL without excessive distribution shift.
+                    Q-Flow resolves the <strong>expressivity–stability dilemma</strong> of flow-based policies
+                    through <strong>intermediate value learning</strong>, achieving stable and efficient training
+                    without backpropagation through the ODE solver.
                 </h2>
             </div>
         </div>
@@ -75,29 +76,26 @@
     <!-- ===== CHALLENGE ===== -->
     <section class="section">
         <div class="container is-max-desktop">
-            <h2 class="title is-3">Challenge: Offline RL Dilemma</h2>
+            <h2 class="title is-3">Challenge: Expressivity vs. Stability Dilemma</h2>
             <div class="content">
                 <p>
-                    Offline reinforcement learning faces a fundamental challenge: learning optimal policies from fixed datasets
-                    without interaction with the environment. The key challenges are:
+                    Flow-based policies can model complex, multimodal action distributions that Gaussian policies cannot.
+                    However, gradient backpropagation through numerical ODE solvers leads to severe instability.
+                    Prior methods are forced into an uncomfortable trade-off:
                 </p>
                 <ul>
                     <li>
-                        <strong>Distribution Shift</strong> — The learned policy may diverge from the behavior policy,
-                        leading to poor generalization on out-of-distribution actions.
+                        <strong>FBRAC</strong> — maintains full expressivity via backpropagation through time (BPTT),
+                        but suffers from instability when behavior cloning constraints weaken.
                     </li>
                     <li>
-                        <strong>Data Quality Heterogeneity</strong> — Real datasets contain trajectories of varying quality,
-                        from near-optimal to random exploration.
-                    </li>
-                    <li>
-                        <strong>Value Extrapolation Error</strong> — Standard value function approximation can lead to
-                        overestimation on unseen state-action pairs.
+                        <strong>FQL</strong> — achieves stability through one-step distillation,
+                        but sacrifices the representational power of flow models.
                     </li>
                 </ul>
             </div>
             <div class="placeholder-media">
-                <p>[Placeholder] Problem illustration or comparison figure</p>
+                <p>[Placeholder] 2D synthetic task figure — Swiss roll &amp; Two spirals (FBRAC vs. FQL vs. Q-Flow)</p>
             </div>
         </div>
     </section>
@@ -107,30 +105,28 @@
     <!-- ===== METHOD ===== -->
     <section class="section">
         <div class="container is-max-desktop">
-            <h2 class="title is-3">QFlow: Quality-Weighted Policy Learning</h2>
+            <h2 class="title is-3">Idea</h2>
+
             <div class="content">
-                <p>
-                    QFlow addresses these challenges through a novel approach that explicitly incorporates
-                    trajectory quality signals into the learning process. The key innovation lies in:
-                </p>
-                <p>
-                    <strong>Quality-Weighted Learning Mechanism:</strong>
-                    We weight learning signals by estimated trajectory quality, allowing the agent to learn
-                    preferentially from high-quality data while remaining robust to poor quality samples.
-                </p>
-                <p>
-                    <strong>Advanced Policy Optimization:</strong>
-                    QFlow combines quality-aware learning with state-of-the-art policy optimization techniques
-                    to ensure stable convergence and efficient training.
-                </p>
-                <p>
-                    <strong>Flexible Agent Architecture:</strong>
-                    The framework supports multiple underlying RL algorithms (IQL, FBRAC, FQL, etc.),
-                    allowing practitioners to choose the right tool for their specific problem.
-                </p>
+                <h3 class="title is-5">Flow-Consistent Value</h3>
+                <ul>
+                    <li>The flow is <strong>deterministic</strong>, and therefore, the intermediate latent noise $x_\tau$ always yields the same action $x_1$.</li>
+                    <li>Exploiting this property, it becomes natural to attribute the terminal utility back along the resulted flow trajectory</li>
+                    <li>This invariance lets Q-Flow assign meaningful value estimates to intermediate states without fully rolling out to the clean action $x_1$.</li>
+                </ul>
             </div>
             <div class="placeholder-media">
-                <p>[Placeholder] Method diagram / algorithm overview</p>
+                <p>[Placeholder] Figure — Flow-Consistent Value (deterministic path, value invariance along trajectory)</p>
+            </div>
+
+            <div class="content mt-5">
+                <h3 class="title is-5">Intermediate Value Gradient</h3>
+                <ul>
+                    <li>Notice that gradient information at the intermediate level is essentially about selecting the intermediate noise $x_\tau$ with the highest eventual outcome — steering the flow toward better actions before it fully commits.</li>
+                </ul>
+            </div>
+            <div class="placeholder-media">
+                <p>[Placeholder] Figure — Intermediate Value Gradient (velocity field steered by $\nabla V^\pi$)</p>
             </div>
         </div>
     </section>
@@ -140,43 +136,40 @@
     <!-- ===== RESULTS ===== -->
     <section class="section">
         <div class="container is-max-desktop">
-            <h2 class="title is-3">Experimental Results</h2>
+            <h2 class="title is-3">Experimental Results (OGBench)</h2>
 
-            <h3 class="title is-4">D4RL Benchmarks</h3>
+            <h3 class="title is-4">Standard Setting</h3>
             <div class="content">
                 <p>
-                    QFlow demonstrates strong performance across standard D4RL benchmark environments,
-                    achieving consistent improvements over baseline methods.
+                    Q-Flow achieves an average improvement of <strong>+10.6 percentage points</strong> over FQL,
+                    with notable gains of +31% on antmaze-giant, +19% on puzzle-3x3, and +25% on humanoidmaze-medium.
+                    It consistently outperforms baselines across Gaussian, Diffusion, and Flow-based policy categories.
                 </p>
             </div>
             <div class="placeholder-media">
-                <p>[Placeholder] D4RL results table — AntMaze, Kitchen, Locomotion</p>
+                <p>[Placeholder] Main results table — Standard Setting (OGBench)</p>
             </div>
 
-            <h3 class="title is-4 mt-5">OGBench Evaluation</h3>
+            <h3 class="title is-4 mt-5">+ various Offline RL techniques</h3>
             <div class="content">
                 <p>
-                    On challenging robotic manipulation tasks from OGBench, QFlow shows significant gains
-                    over prior offline RL methods, particularly on complex navigation tasks.
+                    Under more challenging protocols with larger ensembles, pessimistic value backup, and action chunking,
+                    Q-Flow achieves a <strong>+2.7%</strong> average improvement over the strongest baseline (QAM-E).
                 </p>
             </div>
             <div class="placeholder-media">
-                <p>[Placeholder] OGBench results figure</p>
+                <p>[Placeholder] Results table — Advanced Setting</p>
             </div>
 
-            <h3 class="title is-4 mt-5">Ablation Studies</h3>
+            <h3 class="title is-4 mt-5">Offline-to-Online RL</h3>
             <div class="content">
                 <p>
-                    Ablation studies verify the importance of each component:
+                    Q-Flow achieves a <strong>+23% average improvement</strong> over FQL during online adaptation
+                    while preserving offline performance during fine-tuning.
                 </p>
-                <ul>
-                    <li><strong>Quality Weighting:</strong> Validates the contribution of trajectory quality signals</li>
-                    <li><strong>Aggregation Methods:</strong> Compares different Q-value aggregation strategies</li>
-                    <li><strong>Hyperparameter Sensitivity:</strong> Demonstrates robustness across configurations</li>
-                </ul>
             </div>
             <div class="placeholder-media">
-                <p>[Placeholder] Ablation study results</p>
+                <p>[Placeholder] Offline-to-Online results figure</p>
             </div>
 
         </div>
@@ -184,39 +177,13 @@
 
     <div class="section-divider"><hr /></div>
 
-    <!-- ===== USAGE ===== -->
-    <section class="section">
-        <div class="container is-max-desktop">
-            <h2 class="title is-3">Getting Started</h2>
-            <div class="content">
-                <h4 class="subtitle is-5">Installation</h4>
-                <pre><code>git clone https://github.com/yourusername/qflow.git
-cd qflow
-pip install -r requirements.txt</code></pre>
-
-                <h4 class="subtitle is-5">Quick Start</h4>
-                <pre><code>python main.py --env_name=antmaze-medium-play-v2 --agent=agents/qflow.py</code></pre>
-
-                <h4 class="subtitle is-5">Configuration</h4>
-                <p>
-                    QFlow hyperparameters are managed in <code>qflow_config.py</code>.
-                    Per-domain configurations are automatically loaded based on the environment name.
-                </p>
-
-                <p style="margin-top: 1.5rem;">
-                    For more details, visit the <a href="https://github.com" target="_blank">GitHub repository</a>
-                    or see the README.
-                </p>
-            </div>
-        </div>
-    </section>
 
     <div class="section-divider"><hr /></div>
 
     <!-- ===== CITATION ===== -->
     <section class="section">
         <div class="container is-max-desktop">
-            <h2 class="title is-3">BibTeX</h2>
+            <h2 class="title is-3">Citation</h2>
             <pre class="bibtex-block">@article{doo2026qflow,
   title   = {Q-Flow: Stable and Expressive Reinforcement Learning with Flow-Based Policy},
   author  = {Doo, JaeHyeok and Jeon, Byeongguk and Ye, Seonghyeon and Lee, Kimin and Seo, Minjoon},
