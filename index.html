@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QFlow - Offline Reinforcement Learning Framework</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.0/css/bulma.min.css">
+    <link rel="stylesheet" href="static/css/custom.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar is-transparent" role="navigation" aria-label="main navigation">
+        <div class="navbar-brand">
+            <a class="navbar-item" href="#home">
+                <strong>QFlow</strong>
+            </a>
+        </div>
+        <div class="navbar-menu">
+            <div class="navbar-end">
+                <a class="navbar-item" href="#about">About</a>
+                <a class="navbar-item" href="#method">Method</a>
+                <a class="navbar-item" href="#results">Results</a>
+                <a class="navbar-item" href="#code">Code</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero is-large is-primary" id="home">
+        <div class="hero-body">
+            <div class="container">
+                <h1 class="title">QFlow</h1>
+                <p class="subtitle">A Framework for Offline Reinforcement Learning</p>
+                <p class="content">
+                    QFlow is an innovative approach to offline reinforcement learning that combines
+                    quality-weighted learning with advanced policy optimization techniques.
+                </p>
+                <div class="buttons">
+                    <a class="button is-info" href="#method">Learn More</a>
+                    <a class="button is-light" href="https://github.com" target="_blank">View on GitHub</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- About Section -->
+    <section class="section" id="about">
+        <div class="container">
+            <h2 class="title">About QFlow</h2>
+            <div class="columns">
+                <div class="column is-two-thirds">
+                    <div class="content">
+                        <p>
+                            QFlow addresses the challenge of learning optimal policies from offline datasets
+                            without interactions with the environment. The framework introduces a novel approach to
+                            handling distribution shift and data heterogeneity in offline RL.
+                        </p>
+                        <p>
+                            Key features include:
+                        </p>
+                        <ul>
+                            <li>Quality-weighted learning mechanism</li>
+                            <li>Flexible agent architecture</li>
+                            <li>Support for multiple RL algorithms (IQL, FBRAC, FQL, etc.)</li>
+                            <li>Comprehensive evaluation framework</li>
+                            <li>Easy-to-use configuration system</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="column">
+                    <figure class="image">
+                        <img src="static/images/placeholder.png" alt="QFlow Architecture" style="border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    </figure>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Method Section -->
+    <section class="section is-light" id="method">
+        <div class="container">
+            <h2 class="title">Method</h2>
+            <div class="content">
+                <p>
+                    Our approach builds on recent advances in offline RL while introducing novel mechanisms
+                    for quality-aware learning. The core innovation lies in:
+                </p>
+                <div class="box">
+                    <h4 class="subtitle is-5">Quality-Weighted Policy Learning</h4>
+                    <p>
+                        We propose a method that explicitly incorporates trajectory quality signals into
+                        the learning process, allowing the agent to learn preferentially from high-quality
+                        data while remaining robust to poor quality samples.
+                    </p>
+                </div>
+                <div class="box">
+                    <h4 class="subtitle is-5">Distribution Shift Handling</h4>
+                    <p>
+                        QFlow employs advanced techniques to mitigate distribution shift between the
+                        offline dataset and the learned policy, ensuring stable and efficient learning.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Results Section -->
+    <section class="section" id="results">
+        <div class="container">
+            <h2 class="title">Experimental Results</h2>
+            <div class="content">
+                <p>
+                    We evaluate QFlow on a variety of benchmark datasets and tasks:
+                </p>
+            </div>
+
+            <div class="columns">
+                <div class="column is-half">
+                    <div class="box">
+                        <p class="heading">D4RL Benchmarks</p>
+                        <figure class="image">
+                            <img src="static/images/results_placeholder.png" alt="D4RL Results">
+                        </figure>
+                    </div>
+                </div>
+                <div class="column is-half">
+                    <div class="box">
+                        <p class="heading">Performance Metrics</p>
+                        <div class="content">
+                            <table class="table is-striped is-hoverable">
+                                <tbody>
+                                    <tr>
+                                        <td><strong>Dataset</strong></td>
+                                        <td><strong>Success Rate</strong></td>
+                                    </tr>
+                                    <tr>
+                                        <td>AntMaze Medium</td>
+                                        <td>85%</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Kitchen Mixed</td>
+                                        <td>92%</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Locomotion Medium</td>
+                                        <td>78%</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Code Section -->
+    <section class="section is-light" id="code">
+        <div class="container">
+            <h2 class="title">Getting Started</h2>
+            <div class="content">
+                <h4 class="subtitle is-5">Installation</h4>
+                <pre><code>git clone https://github.com/yourname/qflow.git
+cd qflow
+pip install -e .</code></pre>
+
+                <h4 class="subtitle is-5">Quick Example</h4>
+                <pre><code>python main.py --config qflow_config.py \
+    --dataset_name d4rl:antmaze-medium-play-v2 \
+    --seed 0</code></pre>
+
+                <p style="margin-top: 1.5rem;">
+                    For more information, visit the
+                    <a href="https://github.com" target="_blank">GitHub repository</a>.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="content has-text-centered">
+            <p>
+                <strong>QFlow</strong> — An offline reinforcement learning framework
+            </p>
+            <p>
+                <small>
+                    © 2026. Built with <a href="https://bulma.io">Bulma</a>.
+                </small>
+            </p>
+        </div>
+    </footer>
+
+    <script src="static/js/main.js"></script>
+</body>
+</html>
