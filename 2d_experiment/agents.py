@@ -9,7 +9,7 @@ from functools import partial
 from tqdm import trange
 import matplotlib.pyplot as plt
 
-from .utils import (
+from utils import (
     init_mlp, apply_mlp, fourier_time_embed,
     DOMAIN_MIN, DOMAIN_MAX
 )

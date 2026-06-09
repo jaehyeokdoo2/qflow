@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import jax.numpy as jnp
 import jax.random as jrandom
-from .utils import DOMAIN_MIN, DOMAIN_MAX
+from utils import DOMAIN_MIN, DOMAIN_MAX
 
 def plot_agent_samples(flow_params, agent_name, integrate_fn, n_samples=512,
                        flow_steps=10, key=None, title_suffix=""):
