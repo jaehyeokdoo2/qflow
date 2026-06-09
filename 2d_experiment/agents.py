@@ -14,7 +14,7 @@ from utils import (
     DOMAIN_MIN, DOMAIN_MAX
 )
 
-def train_fql(x_1_data, rewards_data, epochs=2000, lr=1e-3, flow_steps=10, hidden=128,
+def train_fql(x_1_data, rewards_data, epochs=2000, lr=1e-3, alpha=1.0, flow_steps=10, hidden=128,
               num_layers=4, plot_every=None, num_evals=512, save_dir='toy_experiment'):
     """
     FQL: Flow Q-Learning with one-step distillation.
@@ -95,7 +95,7 @@ def train_fql(x_1_data, rewards_data, epochs=2000, lr=1e-3, flow_steps=10, hidde
 
     return flow_params, critic_params, history
 
-def train_fbrac(x_1_data, rewards_data, epochs=2000, lr=1e-3, flow_steps=10, hidden=128,
+def train_fbrac(x_1_data, rewards_data, epochs=2000, lr=1e-3, alpha=1.0, flow_steps=10, hidden=128,
                 num_layers=4, plot_every=None, num_evals=512, bc_epochs=500, save_dir='toy_experiment'):
     """
     FBRAC: Flow-based Behavioral Regularized Actor-Critic.
@@ -180,7 +180,7 @@ def train_fbrac(x_1_data, rewards_data, epochs=2000, lr=1e-3, flow_steps=10, hid
             alignment = jnp.sum(v_at_clean * grad_q, axis=-1)
             q_loss = -jnp.mean(alignment)
 
-            total_loss = jax.lax.select(bc_only, bc_loss, 0.1 * bc_loss + q_loss)
+            total_loss = jax.lax.select(bc_only, bc_loss, alpha * bc_loss + q_loss)
             return total_loss, (bc_loss, q_loss)
 
         (flow_loss, (bc_loss, q_loss)), flow_grads = jax.value_and_grad(flow_loss_fn, has_aux=True)(flow_params)
