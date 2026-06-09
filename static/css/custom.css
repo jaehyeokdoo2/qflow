@@ -19,6 +19,10 @@ body {
     background: linear-gradient(135deg, #2366d1 0%, #1a4fa0 100%);
 }
 
+.hero-body {
+    padding: 2rem 1.5rem;
+}
+
 .hero .title {
     font-size: 4rem;
     font-weight: 700;
@@ -34,12 +38,14 @@ body {
 /* Publication Title and Authors */
 .publication-title {
     color: #ffffff;
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem;
+    font-size: 2.5rem;
+    line-height: 1.3;
 }
 
 .publication-authors {
     color: #ffffff;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.3rem;
 }
 
 .publication-authors a {
