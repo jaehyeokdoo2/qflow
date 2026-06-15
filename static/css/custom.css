@@ -298,32 +298,32 @@ body {
 
 .rt-group {
     text-align: left !important;
-    color: #4b5563;
-    font-size: 0.74rem;
+    color: #6b7280;
+    font-size: 0.72rem;
+    font-weight: 600;
     white-space: nowrap;
     border-right: 1px solid #e5e7eb;
     background: #fafafa;
+    vertical-align: middle;
 }
 
-.rt-method {
+.rt-env {
     text-align: left !important;
     white-space: nowrap;
-    padding-right: 12px !important;
+    padding-right: 14px !important;
+    color: #374151;
 }
 
-.rt-method sup a {
+.rt thead th sup a,
+.rt thead tr:not(.rt-subhead) th sup a {
     color: #9ca3af;
-    font-size: 0.65rem;
+    font-size: 0.62rem;
     text-decoration: none;
     margin-left: 1px;
+    font-weight: 400;
 }
 
-.rt-method sup a:hover { color: var(--accent); }
-
-.rt-avg {
-    font-weight: 600;
-    border-left: 1px solid #d1d5db;
-}
+.rt thead th sup a:hover { color: var(--accent); }
 
 .rt-best {
     background: #f0f4ff;
@@ -337,15 +337,27 @@ body {
     font-weight: 400;
 }
 
-.rt-ours td {
+.rt-ours-col {
     background: #fff7ed;
     color: #92400e;
     font-weight: 600;
+    border-left: 1px solid #fcd34d;
 }
 
-.rt-ours .rt-best {
+.rt-ours-col.rt-best {
     background: #fef3c7;
     color: #78350f;
+}
+
+.rt-avg-row td {
+    background: #f9fafb;
+    font-weight: 600;
+    border-top: 2px solid #d1d5db;
+}
+
+.rt-avg-row .rt-ours-col {
+    background: #fff7ed;
+    color: #92400e;
 }
 
 .rt-note {
