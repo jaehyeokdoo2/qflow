@@ -7,6 +7,11 @@
     --border-color: #e5e5e5;
 }
 
+/* Widen page beyond Bulma's is-max-desktop (960px) */
+.container.is-max-desktop {
+    max-width: 1200px !important;
+}
+
 /* ===== BASE ===== */
 body {
     font-family: 'Noto Sans', 'Inter', sans-serif;
@@ -268,7 +273,7 @@ body {
 .rt {
     border-collapse: collapse;
     font-family: 'Inter', sans-serif;
-    font-size: 0.78rem;
+    font-size: 0.88rem;
     font-variant-numeric: tabular-nums;
     width: 100%;
     min-width: max-content;
@@ -285,6 +290,7 @@ body {
     font-weight: 600;
     border-bottom: 2px solid #d1d5db;
     white-space: nowrap;
+    font-size: 0.85rem;
 }
 
 .rt thead tr.rt-subhead th,
@@ -292,7 +298,7 @@ body {
     background: #f9fafb;
     font-weight: 400;
     color: #6b7280;
-    font-size: 0.7rem;
+    font-size: 0.78rem;
     border-bottom: 1px solid #e5e7eb;
 }
 
@@ -363,7 +369,7 @@ body {
 /* env-name: equivalent of LaTeX \texttt{} */
 code.env-name {
     font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-    font-size: 0.76rem;
+    font-size: 0.84rem;
     color: #0e6b5e;
     background: #f0faf8;
     border-radius: 3px;
