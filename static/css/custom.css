@@ -358,15 +358,15 @@ body {
 }
 
 .rt-ours-col {
-    background: #fff7ed;
-    color: #92400e;
+    background: #eef3ff;
+    color: #1e3a6e;
     font-weight: 600;
-    border-left: 1px solid #fcd34d;
+    border-left: 1px solid #c5d4f5;
 }
 
 .rt-ours-col.rt-best {
-    background: #fef3c7;
-    color: #78350f;
+    background: #d6e4ff;
+    color: #1a3a6b;
 }
 
 .rt-avg-row td {
@@ -376,8 +376,8 @@ body {
 }
 
 .rt-avg-row .rt-ours-col {
-    background: #fff7ed;
-    color: #92400e;
+    background: #d6e4ff;
+    color: #1a3a6b;
 }
 
 /* env-name: equivalent of LaTeX \texttt{} */
