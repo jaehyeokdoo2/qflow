@@ -302,6 +302,10 @@ body {
     vertical-align: middle;
 }
 
+.rt thead th.rt-ours-col {
+    background: #eef3ff;
+}
+
 .rt thead tr.rt-subhead th,
 .rt thead tr.rt-subhead td {
     background: #f9fafb;
