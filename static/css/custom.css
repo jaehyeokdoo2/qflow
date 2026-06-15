@@ -398,8 +398,8 @@ col.rt-col-sep {
 code.env-name {
     font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
     font-size: 0.84rem;
-    color: #0e6b5e;
-    background: #f0faf8;
+    color: #2563a8;
+    background: #eef3ff;
     border-radius: 3px;
     padding: 1px 4px;
     white-space: nowrap;
