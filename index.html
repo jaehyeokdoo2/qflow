@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>QFlow - Offline Reinforcement Learning Framework</title>
+    <title>Q-Flow: Stable and Expressive Reinforcement Learning with Flow-Based Policy</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.0/css/bulma.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css">
@@ -28,7 +28,7 @@
                     <div class="column has-text-centered">
 
                         <h1 class="title is-1 publication-title">
-                            Q-Flow: Stable and Expressive Reinforcement Learning with Flow-Based Policy
+                            Q-Flow: Stable and Expressive Reinforcement Learning<br>with Flow-Based Policy
                         </h1>
 
                         <div class="is-size-5 publication-authors">
@@ -39,21 +39,20 @@
                             <span class="author-block"><a href="#">Minjoon Seo</a></span>
                         </div>
 
-                        <div class="is-size-6 publication-venue mt-2">2026</div>
+                        <div class="is-size-6 publication-venue mt-2">arXiv, 2026</div>
 
                         <div class="publication-links mt-4">
                             <span class="link-block">
                                 <a href="https://arxiv.org/abs/2605.13435" target="_blank"
                                    class="external-link button is-normal is-rounded is-dark">
-                                    <span class="icon"><i class="fas fa-file-pdf"></i></span>
+                                    <span class="icon"><i class="ai ai-arxiv"></i></span>
                                     <span>Paper</span>
                                 </a>
                             </span>
                             <span class="link-block">
-                                <a href="https://github.com" target="_blank"
-                                   class="external-link button is-normal is-rounded is-dark">
+                                <a href="#" class="external-link button is-normal is-rounded is-dark">
                                     <span class="icon"><i class="fab fa-github"></i></span>
-                                    <span>Code</span>
+                                    <span>Code (coming soon)</span>
                                 </a>
                             </span>
                         </div>
@@ -69,13 +68,40 @@
         <div class="container is-max-desktop">
             <div class="hero-body">
                 <div class="placeholder-media teaser-placeholder">
-                    <p>Teaser · toy experiment video or figure (Swiss roll / Two spirals)</p>
+                    <p>Toy experiment · Swiss roll &amp; Two spirals<br><small>FBRAC vs. FQL vs. Q-Flow</small></p>
                 </div>
-                <h2 class="subtitle has-text-centered mt-4">
-                    Q-Flow resolves the <strong>expressivity–stability dilemma</strong> of flow-based policies
-                    through <strong>intermediate value learning</strong>, achieving stable and efficient training
-                    without backpropagation through the ODE solver.
-                </h2>
+                <p class="teaser-caption has-text-centered mt-4">
+                    Flow-based policies are expressive but unstable to optimize.
+                    Q-Flow resolves this by learning value along the <em>intermediate</em> latent states of the flow,
+                    enabling stable policy improvement without ever backpropagating through the ODE solver.
+                    On OGBench, Q-Flow outperforms state-of-the-art baselines by an average of <strong>+10.6 pp</strong>.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <div class="section-divider"><hr /></div>
+
+    <!-- ===== ABSTRACT ===== -->
+    <section class="section" id="abstract">
+        <div class="container is-max-desktop">
+            <h2 class="title is-3">Abstract</h2>
+            <div class="content abstract-text">
+                <p>
+                    There is growing interest in utilizing flow-based models as decision-making policies in
+                    reinforcement learning due to their high expressive capacity. However, effectively leveraging
+                    this expressivity for value maximization remains challenging, as naive gradient-based
+                    optimization requires backpropagating through numerical solvers and often leads to instability.
+                    Existing approaches typically address this by restricting policy expressivity,
+                    resulting in a trade-off between optimization stability and representational flexibility.
+                </p>
+                <p>
+                    We introduce <strong>Q-Flow</strong>, a framework that leverages the deterministic nature
+                    of flow dynamics to explicitly propagate terminal trajectory value to intermediate latent states
+                    along the policy-induced flow. This formulation enables stable policy optimization using
+                    intermediate value gradients without unrolling the numerical solver —
+                    effectively bridging the gap between stability and expressivity.
+                </p>
             </div>
         </div>
     </section>
@@ -83,28 +109,35 @@
     <div class="section-divider"><hr /></div>
 
     <!-- ===== CHALLENGE ===== -->
-    <section class="section">
+    <section class="section" id="challenge">
         <div class="container is-max-desktop">
-            <h2 class="title is-3">Challenge: Expressivity vs. Stability Dilemma</h2>
+            <h2 class="title is-3">Challenge: The Expressivity–Stability Dilemma</h2>
             <div class="content">
                 <p>
-                    Flow-based policies can model complex, multimodal action distributions that Gaussian policies cannot.
-                    However, gradient backpropagation through numerical ODE solvers leads to severe instability.
-                    Prior methods are forced into an uncomfortable trade-off:
+                    Flow-based policies can model complex, multimodal action distributions that simpler policies cannot.
+                    But optimizing them for reward requires backpropagating gradients through a numerical ODE solver —
+                    an operation that is both expensive and unstable.
+                    Prior methods escape this by giving something up:
                 </p>
-                <ul>
-                    <li>
-                        <strong>FBRAC</strong> — maintains full expressivity via backpropagation through time (BPTT),
-                        but suffers from instability when behavior cloning constraints weaken.
-                    </li>
-                    <li>
-                        <strong>FQL</strong> — achieves stability through one-step distillation,
-                        but sacrifices the representational power of flow models.
-                    </li>
-                </ul>
+                <div class="dilemma-cards columns mt-2">
+                    <div class="column">
+                        <div class="dilemma-card box">
+                            <p class="dilemma-label">FBRAC</p>
+                            <p>Keeps full expressivity via BPTT, but becomes numerically unstable when behavior cloning constraints weaken.</p>
+                            <p class="dilemma-tag tag is-danger is-light">Expressive · Unstable</p>
+                        </div>
+                    </div>
+                    <div class="column">
+                        <div class="dilemma-card box">
+                            <p class="dilemma-label">FQL</p>
+                            <p>Achieves stability through one-step distillation into a student policy, but loses the representational power of flow models.</p>
+                            <p class="dilemma-tag tag is-warning is-light">Stable · Limited</p>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="placeholder-media">
-                <p>[Placeholder] 2D synthetic task figure — Swiss roll &amp; Two spirals (FBRAC vs. FQL vs. Q-Flow)</p>
+                <p>Figure · 2D synthetic tasks showing the dilemma<br><small>Swiss roll &amp; Two spirals — FBRAC collapses, FQL underfits, Q-Flow succeeds</small></p>
             </div>
         </div>
     </section>
@@ -112,73 +145,63 @@
     <div class="section-divider"><hr /></div>
 
     <!-- ===== METHOD ===== -->
-    <section class="section">
+    <section class="section" id="method">
         <div class="container is-max-desktop">
-            <h2 class="title is-3">Idea</h2>
+            <h2 class="title is-3">Method</h2>
+            <p class="method-intro content">
+                Q-Flow treats action generation as a <strong>hierarchical MDP</strong>: an outer environmental MDP
+                over states and actions, and an inner continuous-time flow MDP over the latent trajectory
+                $x_\tau \in [0,1]$ that generates each action $a = x_1$.
+            </p>
 
-            <div class="content">
-                <h3 class="title is-5">Flow-Consistent Value</h3>
-                <ul>
-                    <li>The flow is <strong>deterministic</strong>, and therefore, the intermediate latent noise $x_\tau$ always yields the same action $x_1$.</li>
-                    <li>Exploiting this property, it becomes natural to attribute the terminal utility back along the resulted flow trajectory</li>
-                    <li>This invariance lets Q-Flow assign meaningful value estimates to intermediate states without fully rolling out to the clean action $x_1$.</li>
-                </ul>
-            </div>
-            <div class="placeholder-media">
-                <p>[Placeholder] Figure — Flow-Consistent Value (deterministic path, value invariance along trajectory)</p>
-            </div>
-
-            <div class="content mt-5">
-                <h3 class="title is-5">Intermediate Value Gradient</h3>
-                <ul>
-                    <li>Notice that gradient information at the intermediate level is essentially about selecting the intermediate noise $x_\tau$ with the highest eventual outcome — steering the flow toward better actions before it fully commits.</li>
-                </ul>
-            </div>
-            <div class="placeholder-media">
-                <p>[Placeholder] Figure — Intermediate Value Gradient (velocity field steered by $\nabla V^\pi$)</p>
-            </div>
-        </div>
-    </section>
-
-    <div class="section-divider"><hr /></div>
-
-    <!-- ===== RESULTS ===== -->
-    <section class="section">
-        <div class="container is-max-desktop">
-            <h2 class="title is-3">Experimental Results (OGBench)</h2>
-
-            <h3 class="title is-4">Standard Setting</h3>
-            <div class="content">
-                <p>
-                    Q-Flow achieves an average improvement of <strong>+10.6 percentage points</strong> over FQL,
-                    with notable gains of +31% on antmaze-giant, +19% on puzzle-3x3, and +25% on humanoidmaze-medium.
-                    It consistently outperforms baselines across Gaussian, Diffusion, and Flow-based policy categories.
-                </p>
-            </div>
-            <div class="placeholder-media">
-                <p>[Placeholder] Main results table — Standard Setting (OGBench)</p>
+            <!-- Idea 1 -->
+            <div class="method-block mt-5">
+                <h3 class="title is-4 method-heading">
+                    <span class="method-num">1</span> Flow-Consistent Value
+                </h3>
+                <div class="content">
+                    <p>
+                        Because the flow is <strong>deterministic</strong>, any intermediate latent state
+                        $x_\tau$ always integrates to the same terminal action $x_1$.
+                        The value at an intermediate state is therefore identical to the value at its terminal action:
+                    </p>
+                    <div class="equation-display">
+                        $$V^\pi(s,\, x_\tau,\, \tau) \;:=\; Q\!\left(s,\; \Psi^\pi_{1,\tau}(x_\tau, s)\right)$$
+                    </div>
+                    <p>
+                        Q-Flow learns this intermediate value function $V^\pi_\omega$ by regressing against
+                        a target outer critic $Q_{\bar\phi}$ evaluated at the rolled-out terminal state.
+                        This gives each latent waypoint a meaningful value estimate — without full ODE rollouts at training time.
+                    </p>
+                </div>
+                <div class="placeholder-media">
+                    <p>Figure · Flow-consistent value<br><small>Deterministic path → value is invariant along the trajectory</small></p>
+                </div>
             </div>
 
-            <h3 class="title is-4 mt-5">+ various Offline RL techniques</h3>
-            <div class="content">
-                <p>
-                    Under more challenging protocols with larger ensembles, pessimistic value backup, and action chunking,
-                    Q-Flow achieves a <strong>+2.7%</strong> average improvement over the strongest baseline (QAM-E).
-                </p>
-            </div>
-            <div class="placeholder-media">
-                <p>[Placeholder] Results table — Advanced Setting</p>
-            </div>
-
-            <h3 class="title is-4 mt-5">Offline-to-Online RL</h3>
-            <div class="content">
-                <p>
-                    Q-Flow achieves a <strong>+23% average improvement</strong> over FQL during online adaptation
-                    while preserving offline performance during fine-tuning.
-                </p>
-            </div>
-            <div class="placeholder-media">
-                <p>[Placeholder] Offline-to-Online results figure</p>
+            <!-- Idea 2 -->
+            <div class="method-block mt-6">
+                <h3 class="title is-4 method-heading">
+                    <span class="method-num">2</span> Intermediate Value Gradient Matching
+                </h3>
+                <div class="content">
+                    <p>
+                        Instead of backpropagating through the solver, Q-Flow steers the velocity field
+                        directly using gradients of $V^\pi_\omega$ at each intermediate state.
+                        The policy is trained to match a value-guided target velocity:
+                    </p>
+                    <div class="equation-display">
+                        $$v_{\text{target}} \;=\; (x_1 - x_0) \;+\; \frac{1}{\lambda}\,\nabla_{x_\tau} V^\pi_\omega(s,\, x_\tau,\, \tau)$$
+                    </div>
+                    <p>
+                        The guidance coefficient $\lambda$ controls how far the policy deviates from
+                        the dataset distribution. Crucially, $V^\pi_\omega$ is trained on dataset paths —
+                        so its gradients are reliable without any ODE unrolling.
+                    </p>
+                </div>
+                <div class="placeholder-media">
+                    <p>Figure · Intermediate value gradient matching<br><small>Velocity field steered by $\nabla V^\pi$ at each $\tau$</small></p>
+                </div>
             </div>
 
         </div>
@@ -186,11 +209,218 @@
 
     <div class="section-divider"><hr /></div>
 
+    <!-- ===== RESULTS ===== -->
+    <section class="section" id="results">
+        <div class="container is-max-desktop">
+            <h2 class="title is-3">Results</h2>
+            <p class="content">
+                We evaluate on <a href="https://seohongpark.github.io/ogbench/" target="_blank">OGBench</a>
+                — a challenging suite spanning navigation, locomotion, manipulation, and puzzle tasks.
+            </p>
+
+            <!-- Standard Setting -->
+            <h3 class="title is-4 mt-4">Standard Setting</h3>
+            <div class="content">
+                <p>
+                    Q-Flow achieves an average score of <strong>54.4</strong>, outperforming FQL (43.8)
+                    by <strong>+10.6 pp</strong> and consistently leading across all task categories.
+                    Largest gains: <strong>+31 pp</strong> on antmaze-giant,
+                    <strong>+25 pp</strong> on humanoidmaze-medium, <strong>+19 pp</strong> on puzzle-3x3.
+                </p>
+            </div>
+
+            <div class="table-container">
+                <table class="table is-bordered is-fullwidth results-table">
+                    <thead>
+                        <tr>
+                            <th>Environment</th>
+                            <th>IQL</th>
+                            <th>ReBRAC</th>
+                            <th>IDQL</th>
+                            <th>CAC</th>
+                            <th>FAWAC</th>
+                            <th>FBRAC</th>
+                            <th>IFQL</th>
+                            <th>FQL</th>
+                            <th class="qflow-col">Q-Flow</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Summary rows always visible -->
+                        <tr class="highlight-row">
+                            <td>antmaze-giant</td>
+                            <td>4±1</td><td>26±8</td><td>0±0</td><td>0±0</td><td>0±0</td><td>4±4</td><td>3±2</td><td>9±6</td>
+                            <td class="qflow-col"><strong>40±4</strong></td>
+                        </tr>
+                        <tr class="highlight-row">
+                            <td>humanoidmaze-medium</td>
+                            <td>33±2</td><td>22±8</td><td>1±0</td><td>53±8</td><td>19±1</td><td>38±5</td><td>60±14</td><td>58±5</td>
+                            <td class="qflow-col"><strong>83±4</strong></td>
+                        </tr>
+                        <tr class="highlight-row">
+                            <td>puzzle-3x3</td>
+                            <td>9±1</td><td>21±1</td><td>10±2</td><td>19±0</td><td>6±2</td><td>14±4</td><td>19±1</td><td>30±1</td>
+                            <td class="qflow-col"><strong>49±3</strong></td>
+                        </tr>
+                        <!-- Collapsible rows -->
+                        <tr class="collapsible-row hidden-row">
+                            <td>antmaze-large</td>
+                            <td>53±3</td><td>81±5</td><td>21±5</td><td>33±4</td><td>6±1</td><td>60±6</td><td>28±5</td><td>79±3</td>
+                            <td class="qflow-col"><strong>89±5</strong></td>
+                        </tr>
+                        <tr class="collapsible-row hidden-row">
+                            <td>humanoidmaze-large</td>
+                            <td>2±1</td><td>2±1</td><td>1±0</td><td>0±0</td><td>0±0</td><td>2±0</td><td><strong>11±2</strong></td><td>4±2</td>
+                            <td class="qflow-col">8±2</td>
+                        </tr>
+                        <tr class="collapsible-row hidden-row">
+                            <td>antsoccer</td>
+                            <td>8±2</td><td>0±0</td><td>12±4</td><td>2±4</td><td>12±0</td><td>16±1</td><td>33±6</td><td><strong>60±2</strong></td>
+                            <td class="qflow-col">56±4</td>
+                        </tr>
+                        <tr class="collapsible-row hidden-row">
+                            <td>scene</td>
+                            <td>28±1</td><td>41±3</td><td>46±3</td><td>40±7</td><td>30±3</td><td>45±5</td><td>30±3</td><td>56±2</td>
+                            <td class="qflow-col"><strong>60±2</strong></td>
+                        </tr>
+                        <tr class="collapsible-row hidden-row">
+                            <td>puzzle-4x4</td>
+                            <td>7±1</td><td>14±1</td><td><strong>29±3</strong></td><td>15±3</td><td>1±0</td><td>13±1</td><td>25±5</td><td>17±2</td>
+                            <td class="qflow-col"><strong>29±2</strong></td>
+                        </tr>
+                        <tr class="collapsible-row hidden-row">
+                            <td>cube-single</td>
+                            <td>83±3</td><td>91±2</td><td>95±2</td><td>85±9</td><td>81±4</td><td>79±7</td><td>79±2</td><td><strong>96±1</strong></td>
+                            <td class="qflow-col">95±1</td>
+                        </tr>
+                        <tr class="collapsible-row hidden-row">
+                            <td>cube-double</td>
+                            <td>7±1</td><td>12±1</td><td>15±6</td><td>6±2</td><td>5±2</td><td>15±3</td><td>14±3</td><td>29±2</td>
+                            <td class="qflow-col"><strong>36±3</strong></td>
+                        </tr>
+                        <tr class="average-row">
+                            <td><strong>Average</strong></td>
+                            <td>23.4</td><td>31.0</td><td>23.0</td><td>25.3</td><td>16.0</td><td>28.6</td><td>30.2</td><td>43.8</td>
+                            <td class="qflow-col"><strong>54.4</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <button class="button is-small is-light expand-btn" data-target="standard">
+                <span class="expand-label">Show all environments</span>
+                <span class="icon is-small"><i class="fas fa-chevron-down expand-icon"></i></span>
+            </button>
+
+            <!-- Advanced Setting -->
+            <h3 class="title is-4 mt-6">+ Advanced Offline RL Techniques</h3>
+            <div class="content">
+                <p>
+                    Under a harder protocol — larger ensembles, pessimistic value backup, action chunking —
+                    Q-Flow achieves <strong>47.5</strong> on average, outperforming the strongest baseline
+                    QAM-E (44.8) by <strong>+2.7 pp</strong>.
+                </p>
+            </div>
+
+            <div class="table-container">
+                <table class="table is-bordered is-fullwidth results-table">
+                    <thead>
+                        <tr>
+                            <th>Environment</th>
+                            <th>ReBRAC</th>
+                            <th>DAC</th>
+                            <th>QSM</th>
+                            <th>FBRAC</th>
+                            <th>IFQL</th>
+                            <th>FQL</th>
+                            <th>QAM</th>
+                            <th>QAM-E</th>
+                            <th class="qflow-col">Q-Flow</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="highlight-row">
+                            <td>humanoidmaze-medium</td>
+                            <td>67±8</td><td>82±3</td><td>83±5</td><td>36±3</td><td>83±2</td><td>66±4</td><td>64±3</td><td>56±6</td>
+                            <td class="qflow-col"><strong>85±2</strong></td>
+                        </tr>
+                        <tr class="highlight-row">
+                            <td>antmaze-large</td>
+                            <td><strong>94±1</strong></td><td>88±2</td><td>90±3</td><td>2±2</td><td>33±4</td><td>75±6</td><td>77±5</td><td>81±3</td>
+                            <td class="qflow-col"><strong>94±1</strong></td>
+                        </tr>
+                        <tr class="highlight-row">
+                            <td>puzzle-3x3-sparse</td>
+                            <td>77±8</td><td>58±10</td><td>55±8</td><td>0±0</td><td><strong>100±0</strong></td><td>70±12</td><td>99±1</td><td><strong>100±0</strong></td>
+                            <td class="qflow-col"><strong>100±0</strong></td>
+                        </tr>
+                        <tr class="collapsible-row hidden-row" data-group="advanced">
+                            <td>antmaze-giant</td>
+                            <td><strong>54±4</strong></td><td>14±6</td><td>13±5</td><td>0±0</td><td>1±0</td><td>1±2</td><td>15±7</td><td>1±2</td>
+                            <td class="qflow-col">41±4</td>
+                        </tr>
+                        <tr class="collapsible-row hidden-row" data-group="advanced">
+                            <td>humanoidmaze-large</td>
+                            <td>16±3</td><td>0±0</td><td>9±2</td><td>0±0</td><td><strong>22±5</strong></td><td>8±2</td><td>10±4</td><td>2±2</td>
+                            <td class="qflow-col">7±1</td>
+                        </tr>
+                        <tr class="collapsible-row hidden-row" data-group="advanced">
+                            <td>scene-sparse</td>
+                            <td>65±7</td><td>67±5</td><td>85±1</td><td>45±6</td><td>84±2</td><td>79±1</td><td><strong>97±1</strong></td><td><strong>97±1</strong></td>
+                            <td class="qflow-col"><strong>97±1</strong></td>
+                        </tr>
+                        <tr class="collapsible-row hidden-row" data-group="advanced">
+                            <td>puzzle-4x4-sparse</td>
+                            <td>0±0</td><td>0±0</td><td>0±0</td><td>17±4</td><td>0±0</td><td>5±3</td><td>0±0</td><td><strong>36±5</strong></td>
+                            <td class="qflow-col">0±0</td>
+                        </tr>
+                        <tr class="collapsible-row hidden-row" data-group="advanced">
+                            <td>cube-double</td>
+                            <td>9±2</td><td>34±2</td><td>56±3</td><td>0±0</td><td>11±1</td><td>45±3</td><td>64±5</td><td><strong>65±5</strong></td>
+                            <td class="qflow-col">38±3</td>
+                        </tr>
+                        <tr class="collapsible-row hidden-row" data-group="advanced">
+                            <td>cube-triple</td>
+                            <td>1±0</td><td><strong>5±2</strong></td><td>3±1</td><td>0±0</td><td>0±0</td><td>3±1</td><td>3±1</td><td><strong>5±1</strong></td>
+                            <td class="qflow-col">3±1</td>
+                        </tr>
+                        <tr class="collapsible-row hidden-row" data-group="advanced">
+                            <td>cube-quadruple</td>
+                            <td>8±4</td><td>2±2</td><td><strong>19±0</strong></td><td>0±0</td><td>2±1</td><td>2±2</td><td>2±1</td><td>5±2</td>
+                            <td class="qflow-col">10±4</td>
+                        </tr>
+                        <tr class="average-row">
+                            <td><strong>Average</strong></td>
+                            <td>39.1</td><td>35.0</td><td>41.3</td><td>10.0</td><td>33.6</td><td>35.4</td><td>43.1</td><td>44.8</td>
+                            <td class="qflow-col"><strong>47.5</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <button class="button is-small is-light expand-btn" data-target="advanced">
+                <span class="expand-label">Show all environments</span>
+                <span class="icon is-small"><i class="fas fa-chevron-down expand-icon"></i></span>
+            </button>
+
+            <!-- Offline-to-Online -->
+            <h3 class="title is-4 mt-6">Offline-to-Online Adaptation</h3>
+            <div class="content">
+                <p>
+                    Q-Flow requires no architectural changes for online fine-tuning.
+                    Across 5 OGBench environments, it achieves a <strong>+23% average improvement</strong>
+                    over FQL during online adaptation while preserving its offline performance.
+                </p>
+            </div>
+            <div class="placeholder-media">
+                <p>Figure · Offline-to-online learning curves<br><small>Q-Flow vs. FQL across 5 environments</small></p>
+            </div>
+
+        </div>
+    </section>
 
     <div class="section-divider"><hr /></div>
 
     <!-- ===== CITATION ===== -->
-    <section class="section">
+    <section class="section" id="citation">
         <div class="container is-max-desktop">
             <h2 class="title is-3">Citation</h2>
             <pre class="bibtex-block">@article{doo2026qflow,
@@ -206,12 +436,7 @@
     <footer class="footer">
         <div class="content has-text-centered">
             <p>
-                <strong>QFlow</strong> — An offline reinforcement learning framework
-            </p>
-            <p>
-                <small>
-                    © 2026. Built with <a href="https://bulma.io">Bulma</a>.
-                </small>
+                Website template adapted from <a href="https://nerfies.github.io" target="_blank">Nerfies</a>.
             </p>
         </div>
     </footer>

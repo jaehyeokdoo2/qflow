@@ -1,36 +1,30 @@
-// QFlow Website Main JavaScript
+// Collapsible results tables
+document.querySelectorAll('.expand-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const table = btn.previousElementSibling;
+        const hiddenRows = table.querySelectorAll('.hidden-row');
+        const label = btn.querySelector('.expand-label');
+        const icon = btn.querySelector('.expand-icon');
+        const isExpanded = btn.dataset.expanded === 'true';
 
-// Smooth scroll for navigation links
-document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-    anchor.addEventListener('click', function (e) {
-        e.preventDefault();
-        const target = document.querySelector(this.getAttribute('href'));
-        if (target) {
-            target.scrollIntoView({
-                behavior: 'smooth',
-                block: 'start'
-            });
-        }
+        hiddenRows.forEach(row => {
+            row.style.display = isExpanded ? 'none' : '';
+        });
+
+        btn.dataset.expanded = isExpanded ? 'false' : 'true';
+        label.textContent = isExpanded ? 'Show all environments' : 'Show fewer';
+        icon.classList.toggle('fa-chevron-down', isExpanded);
+        icon.classList.toggle('fa-chevron-up', !isExpanded);
     });
 });
 
-// Add active state to navigation items
-window.addEventListener('scroll', () => {
-    const sections = document.querySelectorAll('section');
-    const navItems = document.querySelectorAll('.navbar-item[href^="#"]');
-
-    let current = '';
-    sections.forEach(section => {
-        const sectionTop = section.offsetTop;
-        if (pageYOffset >= sectionTop - 60) {
-            current = section.getAttribute('id');
-        }
-    });
-
-    navItems.forEach(item => {
-        item.classList.remove('is-active');
-        if (item.getAttribute('href').slice(1) === current) {
-            item.classList.add('is-active');
+// Smooth scroll for anchor links
+document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+    anchor.addEventListener('click', function (e) {
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+            e.preventDefault();
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
     });
 });

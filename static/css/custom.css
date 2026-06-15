@@ -1,64 +1,47 @@
-/* Custom Styles for QFlow Website */
-
 :root {
     --primary-color: #2366d1;
-    --secondary-color: #f14668;
     --text-color: #363636;
-    --background-color: #ffffff;
-    --light-background: #f5f5f5;
+    --light-bg: #f5f5f5;
+    --border-color: #e5e5e5;
 }
 
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     color: var(--text-color);
-    line-height: 1.6;
+    line-height: 1.7;
 }
 
-/* Hero Section */
+/* ===== HERO ===== */
 .hero.is-primary {
     background: linear-gradient(135deg, #2366d1 0%, #1a4fa0 100%);
 }
 
 .hero-body {
-    padding: 2rem 1.5rem;
+    padding: 3rem 1.5rem;
 }
 
-.hero .title {
-    font-size: 4rem;
-    font-weight: 700;
-    margin-bottom: 0.5rem;
-}
-
-.hero .subtitle {
-    font-size: 1.5rem;
-    margin-bottom: 1.5rem;
-    opacity: 0.95;
-}
-
-/* Publication Title and Authors */
 .publication-title {
-    color: #ffffff;
-    margin-bottom: 1rem;
-    font-size: 2.5rem;
+    color: #fff;
+    font-size: 2rem !important;
     line-height: 1.3;
+    margin-bottom: 1rem;
 }
 
 .publication-authors {
-    color: #ffffff;
-    margin-bottom: 0.3rem;
+    color: #fff;
+    margin-bottom: 0.25rem;
 }
 
 .publication-authors a {
-    color: #ffffff;
+    color: #fff;
     text-decoration: underline;
+    text-underline-offset: 3px;
 }
 
-.publication-authors a:hover {
-    opacity: 0.8;
-}
+.publication-authors a:hover { opacity: 0.8; }
 
 .publication-venue {
-    color: rgba(255, 255, 255, 0.9);
+    color: rgba(255,255,255,0.75);
     margin-bottom: 1rem;
 }
 
@@ -66,269 +49,238 @@ body {
     display: flex;
     justify-content: center;
     flex-wrap: wrap;
-    gap: 0.75rem;
+    gap: 0.5rem;
 }
 
-.link-block {
-    margin: 0.25rem;
-}
+.link-block { margin: 0.2rem; }
 
 .external-link {
-    background-color: #ffffff;
-    color: #2366d1;
+    background-color: #fff;
+    color: var(--primary-color) !important;
     font-weight: 600;
-    transition: all 0.3s ease;
+    transition: box-shadow 0.2s, transform 0.2s;
 }
 
 .external-link:hover {
-    background-color: #f5f5f5;
+    background-color: #f0f0f0;
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 }
 
-/* Teaser Section */
+/* ===== TEASER ===== */
 .hero.teaser {
-    padding: 3rem 1.5rem;
     background-color: #fafafa;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.hero.teaser .hero-body {
+    padding: 2.5rem 1.5rem;
 }
 
 .teaser-placeholder {
-    background-color: var(--light-background);
-    border-radius: 8px;
-    padding: 3rem 1.5rem;
-    text-align: center;
-    color: #999;
-    margin-bottom: 1.5rem;
-    min-height: 200px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    min-height: 260px;
 }
 
-.placeholder-media {
-    background-color: var(--light-background);
-    border-radius: 8px;
-    padding: 2rem;
-    text-align: center;
-    color: #999;
-    margin: 1.5rem 0;
-    min-height: 200px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+.teaser-caption {
+    font-size: 1.05rem;
+    color: #555;
+    max-width: 680px;
+    margin: 0 auto;
+    line-height: 1.7;
 }
 
-/* Section Divider */
-.section-divider {
-    margin: 0;
-    padding: 0;
+/* ===== SECTION DIVIDER ===== */
+.section-divider { margin: 0; padding: 0; }
+.section-divider hr { margin: 0; background-color: var(--border-color); height: 1px; border: none; }
+
+/* ===== SECTIONS ===== */
+.section { padding: 3.5rem 1.5rem; }
+
+/* ===== ABSTRACT ===== */
+.abstract-text p {
+    font-size: 1.05rem;
+    color: #444;
+    max-width: 720px;
 }
 
-.section-divider hr {
-    margin: 0;
-    border-top: 1px solid #e5e5e5;
+/* ===== CHALLENGE ===== */
+.dilemma-cards { margin-top: 1rem; }
+
+.dilemma-card {
+    border: 1px solid var(--border-color);
+    box-shadow: none !important;
+    padding: 1.25rem 1.5rem;
+    height: 100%;
 }
 
-/* Sections */
-.section {
-    padding: 4rem 1.5rem;
-}
+.dilemma-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08) !important; transform: none; }
 
-.section .title {
-    font-size: 2.5rem;
+.dilemma-label {
     font-weight: 700;
-    margin-bottom: 2rem;
-    color: var(--text-color);
-}
-
-.section .subtitle {
-    color: var(--primary-color);
-    font-weight: 600;
-}
-
-/* Cards and Boxes */
-.box {
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-    transition: all 0.3s ease;
-    padding: 2rem;
-}
-
-.box:hover {
-    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.12);
-    transform: translateY(-2px);
-}
-
-/* Tables */
-.table {
-    width: 100%;
-    border-collapse: collapse;
-}
-
-.table td, .table th {
-    padding: 0.75rem;
-    border-bottom: 1px solid #dbdbdb;
-}
-
-.table thead td,
-.table thead th {
-    background-color: var(--light-background);
-    font-weight: 600;
-    color: var(--primary-color);
-}
-
-/* Code blocks */
-pre {
-    background-color: var(--light-background);
-    border-radius: 6px;
-    padding: 1.25rem;
-    overflow-x: auto;
-    font-size: 0.875rem;
-    line-height: 1.4;
-}
-
-pre.bibtex-block {
-    border-left: 4px solid var(--primary-color);
-    background-color: #f9f9f9;
-    padding: 1.5rem;
-}
-
-code {
-    color: var(--text-color);
-    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-}
-
-pre code {
-    background-color: transparent;
-    padding: 0;
-    color: inherit;
-}
-
-/* Buttons */
-.button {
-    border-radius: 4px;
-    font-weight: 600;
-    transition: all 0.2s ease;
-}
-
-.button:hover {
-    transform: translateY(-1px);
-}
-
-.button.is-info {
-    background-color: var(--primary-color);
-    border-color: var(--primary-color);
-}
-
-.button.is-info:hover {
-    background-color: #1a4fa0;
-    border-color: #1a4fa0;
-}
-
-/* Navigation */
-.navbar {
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
-}
-
-.navbar-item {
-    font-weight: 500;
-}
-
-.navbar-item strong {
-    font-size: 1.25rem;
-    color: var(--primary-color);
-}
-
-/* Footer */
-.footer {
-    background-color: var(--light-background);
-    padding: 2rem 1.5rem;
-    color: var(--text-color);
-}
-
-/* Responsive Images */
-.image img {
-    max-width: 100%;
-    height: auto;
-    display: block;
-}
-
-/* Content Typography */
-.content {
-    font-size: 1.125rem;
-}
-
-.content p {
-    margin-bottom: 1rem;
-}
-
-.content ul, .content ol {
-    margin-left: 2rem;
-    margin-bottom: 1rem;
-}
-
-.content li {
+    font-size: 1rem;
     margin-bottom: 0.5rem;
+    color: #111;
 }
 
-.content a {
-    color: var(--primary-color);
-    text-decoration: none;
-    border-bottom: 1px solid transparent;
-    transition: all 0.2s ease;
+.dilemma-tag { margin-top: 0.75rem; }
+
+/* ===== METHOD ===== */
+.method-intro { font-size: 1.05rem; color: #444; }
+
+.method-block { padding-top: 0.5rem; }
+
+.method-heading {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 1rem !important;
 }
 
-.content a:hover {
-    border-bottom-color: var(--primary-color);
+.method-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: var(--primary-color);
+    color: #fff;
+    border-radius: 50%;
+    font-size: 0.85rem;
+    font-weight: 700;
+    flex-shrink: 0;
 }
 
-/* Responsive Design */
+.equation-display {
+    background: #f8f9ff;
+    border-left: 3px solid var(--primary-color);
+    border-radius: 0 4px 4px 0;
+    padding: 0.75rem 1.25rem;
+    margin: 0.75rem 0 1rem;
+    overflow-x: auto;
+}
+
+/* ===== PLACEHOLDER MEDIA ===== */
+.placeholder-media {
+    background-color: var(--light-bg);
+    border: 2px dashed #ccc;
+    border-radius: 8px;
+    padding: 2rem;
+    text-align: center;
+    color: #aaa;
+    margin: 1.25rem 0;
+    min-height: 180px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.placeholder-media small { font-size: 0.82rem; color: #bbb; }
+
+/* ===== RESULTS TABLES ===== */
+.results-table {
+    font-size: 0.82rem;
+    margin-bottom: 0.5rem !important;
+}
+
+.results-table thead th {
+    background: #1e3a6e;
+    color: #fff;
+    text-align: center;
+    white-space: nowrap;
+    font-weight: 600;
+    font-size: 0.78rem;
+    padding: 0.5rem 0.6rem;
+}
+
+.results-table thead th:first-child { text-align: left; }
+
+.results-table td {
+    text-align: center;
+    vertical-align: middle;
+    padding: 0.45rem 0.6rem;
+}
+
+.results-table td:first-child {
+    text-align: left;
+    font-weight: 500;
+    white-space: nowrap;
+    color: #333;
+}
+
+.qflow-col {
+    background: #eef3ff;
+    color: #1a3a6b;
+    font-weight: 600;
+}
+
+.highlight-row td { background: #fefefe; }
+
+.average-row td {
+    background: #f0f4ff;
+    font-weight: 700;
+    border-top: 2px solid #c5d4f5;
+}
+
+.average-row .qflow-col { background: #d6e4ff; }
+
+.hidden-row { display: none; }
+
+.expand-btn {
+    margin-top: 0.25rem;
+    margin-bottom: 0.5rem;
+    color: var(--primary-color) !important;
+    border-color: #c5d4f5 !important;
+    font-size: 0.8rem;
+}
+
+.expand-btn:hover { background: #eef3ff !important; }
+
+/* ===== CITATION ===== */
+.bibtex-block {
+    background: #f8f8f8;
+    border-left: 4px solid var(--primary-color);
+    border-radius: 0 6px 6px 0;
+    padding: 1.25rem 1.5rem;
+    font-size: 0.85rem;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    overflow-x: auto;
+    line-height: 1.6;
+    color: #333;
+    white-space: pre;
+}
+
+/* ===== FOOTER ===== */
+.footer {
+    background-color: var(--light-bg);
+    padding: 1.5rem;
+    font-size: 0.85rem;
+    color: #aaa;
+    border-top: 1px solid var(--border-color);
+}
+
+.footer a { color: #888; text-decoration: underline; }
+
+/* ===== CONTENT ===== */
+.content { font-size: 1rem; }
+.content p { margin-bottom: 0.85rem; }
+.content ul { margin-left: 1.5rem; }
+.content li { margin-bottom: 0.4rem; }
+.content a { color: var(--primary-color); }
+
+/* ===== RESPONSIVE ===== */
 @media screen and (max-width: 768px) {
-    .hero .title {
-        font-size: 2rem;
-    }
+    .publication-title { font-size: 1.5rem !important; }
+    .publication-authors { font-size: 0.9rem !important; }
+    .publication-links { flex-direction: column; align-items: center; }
+    .section { padding: 2.5rem 1rem; }
+    .results-table { font-size: 0.72rem; }
+    .teaser-placeholder { min-height: 160px; }
+    .dilemma-cards.columns { display: block; }
+    .dilemma-cards .column { padding: 0.5rem 0; }
+}
 
-    .hero .subtitle {
-        font-size: 1.25rem;
-    }
-
-    .publication-title {
-        font-size: 1.75rem !important;
-    }
-
-    .publication-authors {
-        font-size: 0.95rem !important;
-    }
-
-    .publication-links {
-        flex-direction: column;
-        align-items: center;
-    }
-
-    .link-block {
-        width: 100%;
-        max-width: 300px;
-    }
-
-    .section .title {
-        font-size: 2rem;
-    }
-
-    .section .title.is-3 {
-        font-size: 1.75rem;
-    }
-
-    .section .title.is-4 {
-        font-size: 1.5rem;
-    }
-
-    .section {
-        padding: 3rem 1rem;
-    }
-
-    .placeholder-media,
-    .teaser-placeholder {
-        min-height: 150px;
-        padding: 1.5rem;
-    }
+@media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
 }
