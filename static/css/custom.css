@@ -40,6 +40,16 @@ body {
 
 .publication-authors a:hover { opacity: 0.8; }
 
+.corresponding-note {
+    color: rgba(255,255,255,0.75);
+}
+
+.corresponding-note a {
+    color: rgba(255,255,255,0.9);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
 .publication-venue {
     color: rgba(255,255,255,0.75);
     margin-bottom: 1rem;
