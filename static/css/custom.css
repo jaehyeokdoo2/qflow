@@ -1,58 +1,74 @@
 :root {
-    --primary-color: #2366d1;
-    --text-color: #363636;
+    --accent: #598BE7;
+    --accent-dark: #3a6abf;
+    --text-color: #2b2b2b;
+    --text-muted: #666;
     --light-bg: #f5f5f5;
     --border-color: #e5e5e5;
 }
 
+/* ===== BASE ===== */
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-family: 'Noto Sans', 'Inter', sans-serif;
+    font-size: 1.05rem;
     color: var(--text-color);
-    line-height: 1.7;
+    line-height: 1.75;
 }
 
 /* ===== HERO ===== */
-.hero.is-primary {
-    background: linear-gradient(135deg, #2366d1 0%, #1a4fa0 100%);
+.hero {
+    background: #fff;
+    border-bottom: 1px solid var(--border-color);
 }
 
 .hero-body {
-    padding: 3rem 1.5rem;
+    padding: 3.5rem 1.5rem 2.5rem;
 }
 
 .publication-title {
-    color: #fff;
-    font-size: 2rem !important;
-    line-height: 1.3;
-    margin-bottom: 1rem;
+    font-family: 'Google Sans', 'Inter', sans-serif;
+    font-size: 2.4rem !important;
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--text-color) !important;
+    margin-bottom: 1.25rem;
 }
 
 .publication-authors {
-    color: #fff;
+    font-family: 'Noto Sans', sans-serif;
+    color: #444;
     margin-bottom: 0.25rem;
 }
 
 .publication-authors a {
-    color: #fff;
-    text-decoration: underline;
-    text-underline-offset: 3px;
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.15s;
 }
 
-.publication-authors a:hover { opacity: 0.8; }
+.publication-authors a:hover {
+    border-bottom-color: var(--accent);
+}
 
 .corresponding-note {
-    color: rgba(255,255,255,0.75);
+    color: var(--text-muted);
+    font-size: 0.88rem;
 }
 
 .corresponding-note a {
-    color: rgba(255,255,255,0.9);
+    color: var(--accent);
     text-decoration: underline;
-    text-underline-offset: 3px;
+    text-underline-offset: 2px;
 }
 
 .publication-venue {
-    color: rgba(255,255,255,0.75);
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    color: var(--accent);
+    font-size: 1rem;
     margin-bottom: 1rem;
+    letter-spacing: 0.01em;
 }
 
 .publication-links {
@@ -65,38 +81,42 @@ body {
 .link-block { margin: 0.2rem; }
 
 .external-link {
-    background-color: #fff;
-    color: var(--primary-color) !important;
+    font-family: 'Inter', sans-serif;
     font-weight: 600;
-    transition: box-shadow 0.2s, transform 0.2s;
+    font-size: 0.9rem;
+    background: #fff;
+    color: var(--text-color) !important;
+    border: 1.5px solid #ccc !important;
+    transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
 }
 
 .external-link:hover {
-    background-color: #f0f0f0;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    border-color: var(--accent) !important;
+    color: var(--accent) !important;
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(89,139,231,0.15);
 }
 
 /* ===== TEASER ===== */
 .hero.teaser {
     background-color: #fafafa;
     border-bottom: 1px solid var(--border-color);
+    border-top: none;
 }
 
 .hero.teaser .hero-body {
     padding: 2.5rem 1.5rem;
 }
 
-.teaser-placeholder {
-    min-height: 260px;
-}
+.teaser-placeholder { min-height: 260px; }
 
 .teaser-caption {
+    font-family: 'Noto Sans', sans-serif;
     font-size: 1.05rem;
     color: #555;
     max-width: 680px;
     margin: 0 auto;
-    line-height: 1.7;
+    line-height: 1.75;
 }
 
 /* ===== SECTION DIVIDER ===== */
@@ -106,9 +126,14 @@ body {
 /* ===== SECTIONS ===== */
 .section { padding: 3.5rem 1.5rem; }
 
+.title {
+    font-family: 'Google Sans', 'Inter', sans-serif !important;
+    color: var(--text-color) !important;
+}
+
 /* ===== ABSTRACT ===== */
 .abstract-text p {
-    font-size: 1.05rem;
+    font-size: 1.02rem;
     color: #444;
     max-width: 720px;
 }
@@ -121,11 +146,13 @@ body {
     box-shadow: none !important;
     padding: 1.25rem 1.5rem;
     height: 100%;
+    transition: box-shadow 0.15s;
 }
 
-.dilemma-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08) !important; transform: none; }
+.dilemma-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.07) !important; }
 
 .dilemma-label {
+    font-family: 'Inter', sans-serif;
     font-weight: 700;
     font-size: 1rem;
     margin-bottom: 0.5rem;
@@ -135,11 +162,12 @@ body {
 .dilemma-tag { margin-top: 0.75rem; }
 
 /* ===== METHOD ===== */
-.method-intro { font-size: 1.05rem; color: #444; }
+.method-intro { font-size: 1.02rem; color: #444; }
 
 .method-block { padding-top: 0.5rem; }
 
 .method-heading {
+    font-family: 'Google Sans', 'Inter', sans-serif !important;
     display: flex;
     align-items: center;
     gap: 0.6rem;
@@ -150,19 +178,20 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
-    background: var(--primary-color);
+    width: 26px;
+    height: 26px;
+    background: var(--accent);
     color: #fff;
     border-radius: 50%;
-    font-size: 0.85rem;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.82rem;
     font-weight: 700;
     flex-shrink: 0;
 }
 
 .equation-display {
-    background: #f8f9ff;
-    border-left: 3px solid var(--primary-color);
+    background: #f4f7ff;
+    border-left: 3px solid var(--accent);
     border-radius: 0 4px 4px 0;
     padding: 0.75rem 1.25rem;
     margin: 0.75rem 0 1rem;
@@ -184,13 +213,16 @@ body {
     justify-content: center;
     flex-direction: column;
     gap: 0.25rem;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.9rem;
 }
 
-.placeholder-media small { font-size: 0.82rem; color: #bbb; }
+.placeholder-media small { font-size: 0.8rem; color: #bbb; }
 
 /* ===== RESULTS TABLES ===== */
 .results-table {
-    font-size: 0.82rem;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.8rem;
     margin-bottom: 0.5rem !important;
 }
 
@@ -200,7 +232,7 @@ body {
     text-align: center;
     white-space: nowrap;
     font-weight: 600;
-    font-size: 0.78rem;
+    font-size: 0.76rem;
     padding: 0.5rem 0.6rem;
 }
 
@@ -209,7 +241,7 @@ body {
 .results-table td {
     text-align: center;
     vertical-align: middle;
-    padding: 0.45rem 0.6rem;
+    padding: 0.42rem 0.6rem;
 }
 
 .results-table td:first-child {
@@ -238,9 +270,10 @@ body {
 .hidden-row { display: none; }
 
 .expand-btn {
+    font-family: 'Inter', sans-serif;
     margin-top: 0.25rem;
     margin-bottom: 0.5rem;
-    color: var(--primary-color) !important;
+    color: var(--accent) !important;
     border-color: #c5d4f5 !important;
     font-size: 0.8rem;
 }
@@ -249,20 +282,21 @@ body {
 
 /* ===== CITATION ===== */
 .bibtex-block {
+    font-family: 'Courier New', Consolas, monospace;
     background: #f8f8f8;
-    border-left: 4px solid var(--primary-color);
+    border-left: 4px solid var(--accent);
     border-radius: 0 6px 6px 0;
     padding: 1.25rem 1.5rem;
-    font-size: 0.85rem;
-    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.84rem;
     overflow-x: auto;
-    line-height: 1.6;
+    line-height: 1.65;
     color: #333;
     white-space: pre;
 }
 
 /* ===== FOOTER ===== */
 .footer {
+    font-family: 'Noto Sans', sans-serif;
     background-color: var(--light-bg);
     padding: 1.5rem;
     font-size: 0.85rem;
@@ -273,19 +307,24 @@ body {
 .footer a { color: #888; text-decoration: underline; }
 
 /* ===== CONTENT ===== */
-.content { font-size: 1rem; }
+.content {
+    font-family: 'Noto Sans', sans-serif;
+    font-size: 1rem;
+}
+
 .content p { margin-bottom: 0.85rem; }
 .content ul { margin-left: 1.5rem; }
 .content li { margin-bottom: 0.4rem; }
-.content a { color: var(--primary-color); }
+.content a { color: var(--accent); }
+.content strong { color: var(--text-color); }
 
 /* ===== RESPONSIVE ===== */
 @media screen and (max-width: 768px) {
-    .publication-title { font-size: 1.5rem !important; }
+    .publication-title { font-size: 1.6rem !important; }
     .publication-authors { font-size: 0.9rem !important; }
     .publication-links { flex-direction: column; align-items: center; }
     .section { padding: 2.5rem 1rem; }
-    .results-table { font-size: 0.72rem; }
+    .results-table { font-size: 0.7rem; }
     .teaser-placeholder { min-height: 160px; }
     .dilemma-cards.columns { display: block; }
     .dilemma-cards .column { padding: 0.5rem 0; }
