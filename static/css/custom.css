@@ -357,7 +357,7 @@ body {
 .rt thead th sup a:hover { color: var(--accent); }
 
 .rt-best {
-    background: #f7f7f7;
+    background: #f3f3f3;
     color: #1a1a1a;
 }
 
@@ -385,8 +385,12 @@ col.rt-col-sep {
 
 .rt-avg-row td {
     background: #f9fafb;
-    font-weight: 600;
+    font-weight: 400;
     border-top: 2px solid #d1d5db;
+}
+
+.rt-avg-row td:first-child {
+    font-weight: 700;
 }
 
 .rt-avg-row .rt-ours-col {
