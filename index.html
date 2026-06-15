@@ -74,39 +74,39 @@
     <section class="hero teaser" id="overview">
         <div class="container is-max-desktop">
             <div class="hero-body">
+                <h2 class="title is-3 overview-title">Overview</h2>
+
                 <div class="placeholder-media teaser-placeholder">
-                    <p>Toy experiment · Swiss roll &amp; Two spirals<br><small>FBRAC vs. FQL vs. Q-Flow</small></p>
+                    <p>Video · Conceptual walkthrough of Q-Flow<br><small>Toy experiment: Swiss roll &amp; Two spirals — BPTT vs. One-step Distillation vs. Q-Flow</small></p>
                 </div>
+
                 <div class="overview-body mt-5">
-                    <p class="overview-lead">
-                        Flow-based models are compelling policy representations for offline RL —
-                        they can capture complex, multimodal action distributions that simpler policies miss.
-                        But optimizing them for reward via backpropagation through a numerical ODE solver is
-                        computationally expensive and numerically unstable, forcing prior work to sacrifice
-                        either <em>expressivity</em> (FQL) or <em>stability</em> (FBRAC).
-                    </p>
-                    <p class="overview-lead">
-                        <strong>Q-Flow</strong> escapes this dilemma by exploiting a key property of flow models:
-                        their dynamics are <em>deterministic</em>, so every intermediate latent state
-                        $x_\tau$ is uniquely coupled to a terminal action $x_1$.
-                        We use this invariance to learn value functions directly over intermediate states,
-                        and steer the velocity field with their gradients —
-                        achieving stable, expressive policy optimization without ever unrolling the solver.
-                    </p>
-                    <div class="overview-stats columns is-centered mt-4">
-                        <div class="column is-narrow has-text-centered">
-                            <p class="stat-num">+10.6<span class="stat-unit">pp</span></p>
-                            <p class="stat-label">avg. over FQL on OGBench</p>
-                        </div>
-                        <div class="column is-narrow has-text-centered">
-                            <p class="stat-num">+23<span class="stat-unit">%</span></p>
-                            <p class="stat-label">offline-to-online vs. FQL</p>
-                        </div>
-                        <div class="column is-narrow has-text-centered">
-                            <p class="stat-num">2×</p>
-                            <p class="stat-label">faster than FBRAC</p>
-                        </div>
-                    </div>
+                    <ul class="overview-bullets">
+                        <li>
+                            <strong>Problem.</strong>
+                            Flow-based policies are expressive but hard to optimize for reward —
+                            backpropagating through a numerical ODE solver is unstable,
+                            and existing methods trade off either expressivity (one-step distillation) or stability (BPTT).
+                        </li>
+                        <li>
+                            <strong>Key insight.</strong>
+                            Flow dynamics are <em>deterministic</em>: every intermediate latent state $x_\tau$
+                            is uniquely coupled to a terminal action $x_1$, so the environmental value
+                            can be propagated back to each waypoint along the trajectory.
+                        </li>
+                        <li>
+                            <strong>Method.</strong>
+                            Q-Flow learns <em>intermediate value functions</em> over the flow trajectory
+                            and steers the velocity field with their gradients —
+                            achieving stable, expressive policy optimization without unrolling the ODE solver.
+                        </li>
+                        <li>
+                            <strong>Results.</strong>
+                            Q-Flow outperforms state-of-the-art baselines by <strong>+10.6 pp</strong> on OGBench,
+                            achieves <strong>+23%</strong> improvement during offline-to-online adaptation,
+                            and trains <strong>2× faster</strong> than BPTT-based methods.
+                        </li>
+                    </ul>
                 </div>
             </div>
         </div>

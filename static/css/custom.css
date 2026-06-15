@@ -133,44 +133,36 @@ body {
 }
 
 /* ===== OVERVIEW ===== */
-.overview-body { max-width: 720px; margin: 0 auto; }
+.overview-title {
+    margin-bottom: 1.25rem !important;
+}
 
-.overview-lead {
+.overview-body { max-width: 760px; margin: 0 auto; }
+
+.overview-bullets {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.overview-bullets li {
     font-family: 'Noto Sans', sans-serif;
-    font-size: 1.02rem;
+    font-size: 1rem;
     color: #444;
-    line-height: 1.8;
-    margin-bottom: 0.9rem;
+    line-height: 1.75;
+    padding: 0.65rem 0 0.65rem 1.1rem;
+    border-left: 3px solid var(--accent);
+    margin-bottom: 0.75rem;
+    background: #fff;
+    border-radius: 0 4px 4px 0;
+    padding-left: 1rem;
 }
 
-.overview-stats {
-    border-top: 1px solid var(--border-color);
-    padding-top: 1.5rem;
-    gap: 2rem;
-}
-
-.stat-num {
-    font-family: 'Google Sans', 'Inter', sans-serif;
-    font-size: 2.2rem;
-    font-weight: 700;
+.overview-bullets li strong:first-child {
     color: var(--accent);
-    line-height: 1;
-    margin-bottom: 0.3rem;
+    font-weight: 700;
 }
 
-.stat-unit {
-    font-size: 1.1rem;
-    font-weight: 600;
-}
-
-.stat-label {
-    font-family: 'Inter', sans-serif;
-    font-size: 0.82rem;
-    color: var(--text-muted);
-    max-width: 120px;
-    margin: 0 auto;
-    line-height: 1.4;
-}
 
 /* ===== SECTION DIVIDER ===== */
 .section-divider { margin: 0; padding: 0; }
