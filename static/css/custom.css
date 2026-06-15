@@ -119,6 +119,46 @@ body {
     line-height: 1.75;
 }
 
+/* ===== OVERVIEW ===== */
+.overview-body { max-width: 720px; margin: 0 auto; }
+
+.overview-lead {
+    font-family: 'Noto Sans', sans-serif;
+    font-size: 1.02rem;
+    color: #444;
+    line-height: 1.8;
+    margin-bottom: 0.9rem;
+}
+
+.overview-stats {
+    border-top: 1px solid var(--border-color);
+    padding-top: 1.5rem;
+    gap: 2rem;
+}
+
+.stat-num {
+    font-family: 'Google Sans', 'Inter', sans-serif;
+    font-size: 2.2rem;
+    font-weight: 700;
+    color: var(--accent);
+    line-height: 1;
+    margin-bottom: 0.3rem;
+}
+
+.stat-unit {
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.stat-label {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    max-width: 120px;
+    margin: 0 auto;
+    line-height: 1.4;
+}
+
 /* ===== SECTION DIVIDER ===== */
 .section-divider { margin: 0; padding: 0; }
 .section-divider hr { margin: 0; background-color: var(--border-color); height: 1px; border: none; }

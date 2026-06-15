@@ -43,7 +43,7 @@
                             <sup>*</sup> Corresponding author &nbsp;·&nbsp; <a href="mailto:jdoo2@kaist.ac.kr">jdoo2@kaist.ac.kr</a>
                         </div>
 
-                        <div class="is-size-6 publication-venue mt-2">arXiv, 2026</div>
+                        <div class="is-size-6 publication-venue mt-2">ICML 2026</div>
 
                         <div class="publication-links mt-4">
                             <span class="link-block">
@@ -67,45 +67,44 @@
         </div>
     </section>
 
-    <!-- ===== TEASER ===== -->
-    <section class="hero teaser">
+    <!-- ===== OVERVIEW ===== -->
+    <section class="hero teaser" id="overview">
         <div class="container is-max-desktop">
             <div class="hero-body">
                 <div class="placeholder-media teaser-placeholder">
                     <p>Toy experiment · Swiss roll &amp; Two spirals<br><small>FBRAC vs. FQL vs. Q-Flow</small></p>
                 </div>
-                <p class="teaser-caption has-text-centered mt-4">
-                    Flow-based policies are expressive but unstable to optimize.
-                    Q-Flow resolves this by learning value along the <em>intermediate</em> latent states of the flow,
-                    enabling stable policy improvement without ever backpropagating through the ODE solver.
-                    On OGBench, Q-Flow outperforms state-of-the-art baselines by an average of <strong>+10.6 pp</strong>.
-                </p>
-            </div>
-        </div>
-    </section>
-
-    <div class="section-divider"><hr /></div>
-
-    <!-- ===== ABSTRACT ===== -->
-    <section class="section" id="abstract">
-        <div class="container is-max-desktop">
-            <h2 class="title is-3">Abstract</h2>
-            <div class="content abstract-text">
-                <p>
-                    There is growing interest in utilizing flow-based models as decision-making policies in
-                    reinforcement learning due to their high expressive capacity. However, effectively leveraging
-                    this expressivity for value maximization remains challenging, as naive gradient-based
-                    optimization requires backpropagating through numerical solvers and often leads to instability.
-                    Existing approaches typically address this by restricting policy expressivity,
-                    resulting in a trade-off between optimization stability and representational flexibility.
-                </p>
-                <p>
-                    We introduce <strong>Q-Flow</strong>, a framework that leverages the deterministic nature
-                    of flow dynamics to explicitly propagate terminal trajectory value to intermediate latent states
-                    along the policy-induced flow. This formulation enables stable policy optimization using
-                    intermediate value gradients without unrolling the numerical solver —
-                    effectively bridging the gap between stability and expressivity.
-                </p>
+                <div class="overview-body mt-5">
+                    <p class="overview-lead">
+                        Flow-based models are compelling policy representations for offline RL —
+                        they can capture complex, multimodal action distributions that simpler policies miss.
+                        But optimizing them for reward via backpropagation through a numerical ODE solver is
+                        computationally expensive and numerically unstable, forcing prior work to sacrifice
+                        either <em>expressivity</em> (FQL) or <em>stability</em> (FBRAC).
+                    </p>
+                    <p class="overview-lead">
+                        <strong>Q-Flow</strong> escapes this dilemma by exploiting a key property of flow models:
+                        their dynamics are <em>deterministic</em>, so every intermediate latent state
+                        $x_\tau$ is uniquely coupled to a terminal action $x_1$.
+                        We use this invariance to learn value functions directly over intermediate states,
+                        and steer the velocity field with their gradients —
+                        achieving stable, expressive policy optimization without ever unrolling the solver.
+                    </p>
+                    <div class="overview-stats columns is-centered mt-4">
+                        <div class="column is-narrow has-text-centered">
+                            <p class="stat-num">+10.6<span class="stat-unit">pp</span></p>
+                            <p class="stat-label">avg. over FQL on OGBench</p>
+                        </div>
+                        <div class="column is-narrow has-text-centered">
+                            <p class="stat-num">+23<span class="stat-unit">%</span></p>
+                            <p class="stat-label">offline-to-online vs. FQL</p>
+                        </div>
+                        <div class="column is-narrow has-text-centered">
+                            <p class="stat-num">2×</p>
+                            <p class="stat-label">faster than FBRAC</p>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </section>
