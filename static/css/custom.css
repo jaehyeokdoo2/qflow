@@ -313,6 +313,21 @@ body {
     vertical-align: middle;
 }
 
+.rt-type-header {
+    font-size: 0.78rem;
+    color: #374151;
+    font-weight: 700;
+    text-align: center !important;
+}
+
+.rt-task-type {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #374151;
+    letter-spacing: 0.01em;
+    text-align: center !important;
+}
+
 .rt-env {
     text-align: left !important;
     white-space: nowrap;
@@ -333,7 +348,6 @@ body {
 
 .rt-best {
     background: #f0f4ff;
-    font-weight: 700;
     color: #1e3a6e;
 }
 

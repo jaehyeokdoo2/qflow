@@ -240,10 +240,10 @@
                             <th colspan="2">Gaussian</th>
                             <th colspan="2">Diffusion</th>
                             <th colspan="4">Flow</th>
-                            <th>Ours</th>
+                            <th></th>
                         </tr>
                         <tr>
-                            <th class="rt-group"></th>
+                            <th class="rt-group rt-type-header">Task type</th>
                             <th class="rt-env">Environment</th>
                             <th>IQL <sup><a href="#ref-iql">4</a></sup></th>
                             <th>ReBRAC <sup><a href="#ref-rebrac">5</a></sup></th>
@@ -253,51 +253,51 @@
                             <th>FBRAC <sup><a href="#ref-fql">2</a></sup></th>
                             <th>IFQL <sup><a href="#ref-idql">6</a></sup></th>
                             <th>FQL <sup><a href="#ref-fql">2</a></sup></th>
-                            <th class="rt-ours-col">Q-Flow</th>
+                            <th class="rt-ours-col">Q-Flow<br><small>(ours)</small></th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr>
-                            <td class="rt-group" rowspan="5">Locomotion</td>
+                            <td class="rt-group rt-task-type" rowspan="5">Locomotion</td>
                             <td class="rt-env"><code class="env-name">antmaze-large</code></td>
-                            <td>53<sub>±3</sub></td><td>81<sub>±5</sub></td><td>21<sub>±5</sub></td><td>33<sub>±4</sub></td><td>6<sub>±1</sub></td><td>60<sub>±6</sub></td><td>28<sub>±5</sub></td><td>79<sub>±3</sub></td><td class="rt-ours-col rt-best">89<sub>±5</sub></td>
+                            <td>53<sub>±3</sub></td><td>81<sub>±5</sub></td><td>21<sub>±5</sub></td><td>33<sub>±4</sub></td><td>6<sub>±1</sub></td><td>60<sub>±6</sub></td><td>28<sub>±5</sub></td><td>79<sub>±3</sub></td><td class="rt-ours-col rt-best"><strong>89</strong><sub>±5</sub></td>
                         </tr>
                         <tr>
                             <td class="rt-env"><code class="env-name">antmaze-giant</code></td>
-                            <td>4<sub>±1</sub></td><td>26<sub>±8</sub></td><td>0<sub>±0</sub></td><td>0<sub>±0</sub></td><td>0<sub>±0</sub></td><td>4<sub>±4</sub></td><td>3<sub>±2</sub></td><td>9<sub>±6</sub></td><td class="rt-ours-col rt-best">40<sub>±4</sub></td>
+                            <td>4<sub>±1</sub></td><td>26<sub>±8</sub></td><td>0<sub>±0</sub></td><td>0<sub>±0</sub></td><td>0<sub>±0</sub></td><td>4<sub>±4</sub></td><td>3<sub>±2</sub></td><td>9<sub>±6</sub></td><td class="rt-ours-col rt-best"><strong>40</strong><sub>±4</sub></td>
                         </tr>
                         <tr>
                             <td class="rt-env"><code class="env-name">humanoidmaze-medium</code></td>
-                            <td>33<sub>±2</sub></td><td>22<sub>±8</sub></td><td>1<sub>±0</sub></td><td>53<sub>±8</sub></td><td>19<sub>±1</sub></td><td>38<sub>±5</sub></td><td>60<sub>±14</sub></td><td>58<sub>±5</sub></td><td class="rt-ours-col rt-best">83<sub>±4</sub></td>
+                            <td>33<sub>±2</sub></td><td>22<sub>±8</sub></td><td>1<sub>±0</sub></td><td>53<sub>±8</sub></td><td>19<sub>±1</sub></td><td>38<sub>±5</sub></td><td>60<sub>±14</sub></td><td>58<sub>±5</sub></td><td class="rt-ours-col rt-best"><strong>83</strong><sub>±4</sub></td>
                         </tr>
                         <tr>
                             <td class="rt-env"><code class="env-name">humanoidmaze-large</code></td>
-                            <td>2<sub>±1</sub></td><td>2<sub>±1</sub></td><td>1<sub>±0</sub></td><td>0<sub>±0</sub></td><td>0<sub>±0</sub></td><td>2<sub>±0</sub></td><td class="rt-best">11<sub>±2</sub></td><td>4<sub>±2</sub></td><td class="rt-ours-col">8<sub>±2</sub></td>
+                            <td>2<sub>±1</sub></td><td>2<sub>±1</sub></td><td>1<sub>±0</sub></td><td>0<sub>±0</sub></td><td>0<sub>±0</sub></td><td>2<sub>±0</sub></td><td class="rt-best"><strong>11</strong><sub>±2</sub></td><td>4<sub>±2</sub></td><td class="rt-ours-col">8<sub>±2</sub></td>
                         </tr>
                         <tr>
                             <td class="rt-env"><code class="env-name">antsoccer</code></td>
-                            <td>8<sub>±2</sub></td><td>0<sub>±0</sub></td><td>12<sub>±4</sub></td><td>2<sub>±4</sub></td><td>12<sub>±0</sub></td><td>16<sub>±1</sub></td><td>33<sub>±6</sub></td><td class="rt-best">60<sub>±2</sub></td><td class="rt-ours-col">56<sub>±4</sub></td>
+                            <td>8<sub>±2</sub></td><td>0<sub>±0</sub></td><td>12<sub>±4</sub></td><td>2<sub>±4</sub></td><td>12<sub>±0</sub></td><td>16<sub>±1</sub></td><td>33<sub>±6</sub></td><td class="rt-best"><strong>60</strong><sub>±2</sub></td><td class="rt-ours-col">56<sub>±4</sub></td>
                         </tr>
                         <tr>
-                            <td class="rt-group" rowspan="5">Manipulation</td>
+                            <td class="rt-group rt-task-type" rowspan="5">Manipulation</td>
                             <td class="rt-env"><code class="env-name">scene</code></td>
-                            <td>28<sub>±1</sub></td><td>41<sub>±3</sub></td><td>46<sub>±3</sub></td><td>40<sub>±7</sub></td><td>30<sub>±3</sub></td><td>45<sub>±5</sub></td><td>30<sub>±3</sub></td><td>56<sub>±2</sub></td><td class="rt-ours-col rt-best">60<sub>±2</sub></td>
+                            <td>28<sub>±1</sub></td><td>41<sub>±3</sub></td><td>46<sub>±3</sub></td><td>40<sub>±7</sub></td><td>30<sub>±3</sub></td><td>45<sub>±5</sub></td><td>30<sub>±3</sub></td><td>56<sub>±2</sub></td><td class="rt-ours-col rt-best"><strong>60</strong><sub>±2</sub></td>
                         </tr>
                         <tr>
                             <td class="rt-env"><code class="env-name">puzzle-3×3</code></td>
-                            <td>9<sub>±1</sub></td><td>21<sub>±1</sub></td><td>10<sub>±2</sub></td><td>19<sub>±0</sub></td><td>6<sub>±2</sub></td><td>14<sub>±4</sub></td><td>19<sub>±1</sub></td><td>30<sub>±1</sub></td><td class="rt-ours-col rt-best">49<sub>±3</sub></td>
+                            <td>9<sub>±1</sub></td><td>21<sub>±1</sub></td><td>10<sub>±2</sub></td><td>19<sub>±0</sub></td><td>6<sub>±2</sub></td><td>14<sub>±4</sub></td><td>19<sub>±1</sub></td><td>30<sub>±1</sub></td><td class="rt-ours-col rt-best"><strong>49</strong><sub>±3</sub></td>
                         </tr>
                         <tr>
                             <td class="rt-env"><code class="env-name">puzzle-4×4</code></td>
-                            <td>7<sub>±1</sub></td><td>14<sub>±1</sub></td><td class="rt-best">29<sub>±3</sub></td><td>15<sub>±3</sub></td><td>1<sub>±0</sub></td><td>13<sub>±1</sub></td><td>25<sub>±5</sub></td><td>17<sub>±2</sub></td><td class="rt-ours-col rt-best">29<sub>±2</sub></td>
+                            <td>7<sub>±1</sub></td><td>14<sub>±1</sub></td><td class="rt-best"><strong>29</strong><sub>±3</sub></td><td>15<sub>±3</sub></td><td>1<sub>±0</sub></td><td>13<sub>±1</sub></td><td>25<sub>±5</sub></td><td>17<sub>±2</sub></td><td class="rt-ours-col rt-best"><strong>29</strong><sub>±2</sub></td>
                         </tr>
                         <tr>
                             <td class="rt-env"><code class="env-name">cube-single</code></td>
-                            <td>83<sub>±3</sub></td><td>91<sub>±2</sub></td><td>95<sub>±2</sub></td><td>85<sub>±9</sub></td><td>81<sub>±4</sub></td><td>79<sub>±7</sub></td><td>79<sub>±2</sub></td><td class="rt-best">96<sub>±1</sub></td><td class="rt-ours-col">95<sub>±1</sub></td>
+                            <td>83<sub>±3</sub></td><td>91<sub>±2</sub></td><td>95<sub>±2</sub></td><td>85<sub>±9</sub></td><td>81<sub>±4</sub></td><td>79<sub>±7</sub></td><td>79<sub>±2</sub></td><td class="rt-best"><strong>96</strong><sub>±1</sub></td><td class="rt-ours-col">95<sub>±1</sub></td>
                         </tr>
                         <tr>
                             <td class="rt-env"><code class="env-name">cube-double</code></td>
-                            <td>7<sub>±1</sub></td><td>12<sub>±1</sub></td><td>15<sub>±6</sub></td><td>6<sub>±2</sub></td><td>5<sub>±2</sub></td><td>15<sub>±3</sub></td><td>14<sub>±3</sub></td><td>29<sub>±2</sub></td><td class="rt-ours-col rt-best">36<sub>±3</sub></td>
+                            <td>7<sub>±1</sub></td><td>12<sub>±1</sub></td><td>15<sub>±6</sub></td><td>6<sub>±2</sub></td><td>5<sub>±2</sub></td><td>15<sub>±3</sub></td><td>14<sub>±3</sub></td><td>29<sub>±2</sub></td><td class="rt-ours-col rt-best"><strong>36</strong><sub>±3</sub></td>
                         </tr>
                         <tr class="rt-avg-row">
                             <td colspan="2"><strong>Average</strong></td>
@@ -326,13 +326,13 @@
                     <thead>
                         <tr class="rt-subhead">
                             <th colspan="2"></th>
-                            <th colspan="3">Non-flow</th>
-                            <th colspan="3">Flow</th>
-                            <th colspan="2">Adj. Matching</th>
-                            <th>Ours</th>
+                            <th colspan="1">Gaussian</th>
+                            <th colspan="2">Diffusion</th>
+                            <th colspan="5">Flow</th>
+                            <th></th>
                         </tr>
                         <tr>
-                            <th class="rt-group"></th>
+                            <th class="rt-group rt-type-header">Task type</th>
                             <th class="rt-env">Environment</th>
                             <th>ReBRAC <sup><a href="#ref-rebrac">5</a></sup></th>
                             <th>DAC <sup><a href="#ref-dac">8</a></sup></th>
@@ -342,51 +342,51 @@
                             <th>FQL <sup><a href="#ref-fql">2</a></sup></th>
                             <th>QAM <sup><a href="#ref-qam">3</a></sup></th>
                             <th>QAM-E <sup><a href="#ref-qam">3</a></sup></th>
-                            <th class="rt-ours-col">Q-Flow</th>
+                            <th class="rt-ours-col">Q-Flow<br><small>(ours)</small></th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr>
-                            <td class="rt-group" rowspan="4">Locomotion</td>
+                            <td class="rt-group rt-task-type" rowspan="4">Locomotion</td>
                             <td class="rt-env"><code class="env-name">antmaze-large</code></td>
-                            <td class="rt-best">94<sub>±1</sub></td><td>88<sub>±2</sub></td><td>90<sub>±3</sub></td><td>2<sub>±2</sub></td><td>33<sub>±4</sub></td><td>75<sub>±6</sub></td><td>77<sub>±5</sub></td><td>81<sub>±3</sub></td><td class="rt-ours-col rt-best">94<sub>±1</sub></td>
+                            <td class="rt-best"><strong>94</strong><sub>±1</sub></td><td>88<sub>±2</sub></td><td>90<sub>±3</sub></td><td>2<sub>±2</sub></td><td>33<sub>±4</sub></td><td>75<sub>±6</sub></td><td>77<sub>±5</sub></td><td>81<sub>±3</sub></td><td class="rt-ours-col rt-best"><strong>94</strong><sub>±1</sub></td>
                         </tr>
                         <tr>
                             <td class="rt-env"><code class="env-name">antmaze-giant</code></td>
-                            <td class="rt-best">54<sub>±4</sub></td><td>14<sub>±6</sub></td><td>13<sub>±5</sub></td><td>0<sub>±0</sub></td><td>1<sub>±0</sub></td><td>1<sub>±2</sub></td><td>15<sub>±7</sub></td><td>1<sub>±2</sub></td><td class="rt-ours-col">41<sub>±4</sub></td>
+                            <td class="rt-best"><strong>54</strong><sub>±4</sub></td><td>14<sub>±6</sub></td><td>13<sub>±5</sub></td><td>0<sub>±0</sub></td><td>1<sub>±0</sub></td><td>1<sub>±2</sub></td><td>15<sub>±7</sub></td><td>1<sub>±2</sub></td><td class="rt-ours-col">41<sub>±4</sub></td>
                         </tr>
                         <tr>
                             <td class="rt-env"><code class="env-name">humanoidmaze-medium</code></td>
-                            <td>67<sub>±8</sub></td><td>82<sub>±3</sub></td><td>83<sub>±5</sub></td><td>36<sub>±3</sub></td><td>83<sub>±2</sub></td><td>66<sub>±4</sub></td><td>64<sub>±3</sub></td><td>56<sub>±6</sub></td><td class="rt-ours-col rt-best">85<sub>±2</sub></td>
+                            <td>67<sub>±8</sub></td><td>82<sub>±3</sub></td><td>83<sub>±5</sub></td><td>36<sub>±3</sub></td><td>83<sub>±2</sub></td><td>66<sub>±4</sub></td><td>64<sub>±3</sub></td><td>56<sub>±6</sub></td><td class="rt-ours-col rt-best"><strong>85</strong><sub>±2</sub></td>
                         </tr>
                         <tr>
                             <td class="rt-env"><code class="env-name">humanoidmaze-large</code></td>
-                            <td>16<sub>±3</sub></td><td>0<sub>±0</sub></td><td>9<sub>±2</sub></td><td>0<sub>±0</sub></td><td class="rt-best">22<sub>±5</sub></td><td>8<sub>±2</sub></td><td>10<sub>±4</sub></td><td>2<sub>±2</sub></td><td class="rt-ours-col">7<sub>±1</sub></td>
+                            <td>16<sub>±3</sub></td><td>0<sub>±0</sub></td><td>9<sub>±2</sub></td><td>0<sub>±0</sub></td><td class="rt-best"><strong>22</strong><sub>±5</sub></td><td>8<sub>±2</sub></td><td>10<sub>±4</sub></td><td>2<sub>±2</sub></td><td class="rt-ours-col">7<sub>±1</sub></td>
                         </tr>
                         <tr>
-                            <td class="rt-group" rowspan="6">Manipulation</td>
+                            <td class="rt-group rt-task-type" rowspan="6">Manipulation</td>
                             <td class="rt-env"><code class="env-name">scene-sparse</code></td>
-                            <td>65<sub>±7</sub></td><td>67<sub>±5</sub></td><td>85<sub>±1</sub></td><td>45<sub>±6</sub></td><td>84<sub>±2</sub></td><td>79<sub>±1</sub></td><td class="rt-best">97<sub>±1</sub></td><td class="rt-best">97<sub>±1</sub></td><td class="rt-ours-col rt-best">97<sub>±1</sub></td>
+                            <td>65<sub>±7</sub></td><td>67<sub>±5</sub></td><td>85<sub>±1</sub></td><td>45<sub>±6</sub></td><td>84<sub>±2</sub></td><td>79<sub>±1</sub></td><td class="rt-best"><strong>97</strong><sub>±1</sub></td><td class="rt-best"><strong>97</strong><sub>±1</sub></td><td class="rt-ours-col rt-best"><strong>97</strong><sub>±1</sub></td>
                         </tr>
                         <tr>
                             <td class="rt-env"><code class="env-name">puzzle-3×3-sparse</code></td>
-                            <td>77<sub>±8</sub></td><td>58<sub>±10</sub></td><td>55<sub>±8</sub></td><td>0<sub>±0</sub></td><td class="rt-best">100<sub>±0</sub></td><td>70<sub>±12</sub></td><td>99<sub>±1</sub></td><td class="rt-best">100<sub>±0</sub></td><td class="rt-ours-col rt-best">100<sub>±0</sub></td>
+                            <td>77<sub>±8</sub></td><td>58<sub>±10</sub></td><td>55<sub>±8</sub></td><td>0<sub>±0</sub></td><td class="rt-best"><strong>100</strong><sub>±0</sub></td><td>70<sub>±12</sub></td><td>99<sub>±1</sub></td><td class="rt-best"><strong>100</strong><sub>±0</sub></td><td class="rt-ours-col rt-best"><strong>100</strong><sub>±0</sub></td>
                         </tr>
                         <tr>
                             <td class="rt-env"><code class="env-name">puzzle-4×4-sparse</code></td>
-                            <td>0<sub>±0</sub></td><td>0<sub>±0</sub></td><td>0<sub>±0</sub></td><td>17<sub>±4</sub></td><td>0<sub>±0</sub></td><td>5<sub>±3</sub></td><td>0<sub>±0</sub></td><td class="rt-best">36<sub>±5</sub></td><td class="rt-ours-col">0<sub>±0</sub></td>
+                            <td>0<sub>±0</sub></td><td>0<sub>±0</sub></td><td>0<sub>±0</sub></td><td>17<sub>±4</sub></td><td>0<sub>±0</sub></td><td>5<sub>±3</sub></td><td>0<sub>±0</sub></td><td class="rt-best"><strong>36</strong><sub>±5</sub></td><td class="rt-ours-col">0<sub>±0</sub></td>
                         </tr>
                         <tr>
                             <td class="rt-env"><code class="env-name">cube-double</code></td>
-                            <td>9<sub>±2</sub></td><td>34<sub>±2</sub></td><td>56<sub>±3</sub></td><td>0<sub>±0</sub></td><td>11<sub>±1</sub></td><td>45<sub>±3</sub></td><td>64<sub>±5</sub></td><td class="rt-best">65<sub>±5</sub></td><td class="rt-ours-col">38<sub>±3</sub></td>
+                            <td>9<sub>±2</sub></td><td>34<sub>±2</sub></td><td>56<sub>±3</sub></td><td>0<sub>±0</sub></td><td>11<sub>±1</sub></td><td>45<sub>±3</sub></td><td>64<sub>±5</sub></td><td class="rt-best"><strong>65</strong><sub>±5</sub></td><td class="rt-ours-col">38<sub>±3</sub></td>
                         </tr>
                         <tr>
                             <td class="rt-env"><code class="env-name">cube-triple</code></td>
-                            <td>1<sub>±0</sub></td><td class="rt-best">5<sub>±2</sub></td><td>3<sub>±1</sub></td><td>0<sub>±0</sub></td><td>0<sub>±0</sub></td><td>3<sub>±1</sub></td><td>3<sub>±1</sub></td><td class="rt-best">5<sub>±1</sub></td><td class="rt-ours-col">3<sub>±1</sub></td>
+                            <td>1<sub>±0</sub></td><td class="rt-best"><strong>5</strong><sub>±2</sub></td><td>3<sub>±1</sub></td><td>0<sub>±0</sub></td><td>0<sub>±0</sub></td><td>3<sub>±1</sub></td><td>3<sub>±1</sub></td><td class="rt-best"><strong>5</strong><sub>±1</sub></td><td class="rt-ours-col">3<sub>±1</sub></td>
                         </tr>
                         <tr>
                             <td class="rt-env"><code class="env-name">cube-quadruple</code></td>
-                            <td>8<sub>±4</sub></td><td>2<sub>±2</sub></td><td class="rt-best">19<sub>±0</sub></td><td>0<sub>±0</sub></td><td>2<sub>±1</sub></td><td>2<sub>±2</sub></td><td>2<sub>±1</sub></td><td>5<sub>±2</sub></td><td class="rt-ours-col">10<sub>±4</sub></td>
+                            <td>8<sub>±4</sub></td><td>2<sub>±2</sub></td><td class="rt-best"><strong>19</strong><sub>±0</sub></td><td>0<sub>±0</sub></td><td>2<sub>±1</sub></td><td>2<sub>±2</sub></td><td>2<sub>±1</sub></td><td>5<sub>±2</sub></td><td class="rt-ours-col">10<sub>±4</sub></td>
                         </tr>
                         <tr class="rt-avg-row">
                             <td colspan="2"><strong>Average</strong></td>
@@ -411,6 +411,21 @@
                 <p>Figure · Offline-to-online learning curves<br><small>Q-Flow vs. FQL across 5 environments</small></p>
             </div>
 
+        </div>
+    </section>
+
+    <div class="section-divider"><hr /></div>
+
+    <!-- ===== CITATION ===== -->
+    <section class="section" id="citation">
+        <div class="container is-max-desktop">
+            <h2 class="title is-3">Citation</h2>
+            <pre class="bibtex-block">@inproceedings{doo2026qflow,
+  title     = {Q-Flow: Stable and Expressive Reinforcement Learning with Flow-Based Policy},
+  author    = {Doo, JaeHyeok and Jeon, Byeongguk and Ye, Seonghyeon and Lee, Kimin and Seo, Minjoon},
+  booktitle = {International Conference on Machine Learning},
+  year      = {2026}
+}</pre>
         </div>
     </section>
 
@@ -475,21 +490,6 @@
                     <span class="ref-tag">QSM</span>
                 </li>
             </ol>
-        </div>
-    </section>
-
-    <div class="section-divider"><hr /></div>
-
-    <!-- ===== CITATION ===== -->
-    <section class="section" id="citation">
-        <div class="container is-max-desktop">
-            <h2 class="title is-3">Citation</h2>
-            <pre class="bibtex-block">@inproceedings{doo2026qflow,
-  title     = {Q-Flow: Stable and Expressive Reinforcement Learning with Flow-Based Policy},
-  author    = {Doo, JaeHyeok and Jeon, Byeongguk and Ye, Seonghyeon and Lee, Kimin and Seo, Minjoon},
-  booktitle = {International Conference on Machine Learning},
-  year      = {2026}
-}</pre>
         </div>
     </section>
 
