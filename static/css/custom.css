@@ -291,6 +291,7 @@ body {
     border-bottom: 2px solid #d1d5db;
     white-space: nowrap;
     font-size: 0.85rem;
+    vertical-align: middle;
 }
 
 .rt thead tr.rt-subhead th,
