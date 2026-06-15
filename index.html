@@ -80,7 +80,7 @@
                         they can capture complex, multimodal action distributions that simpler policies miss.
                         But optimizing them for reward via backpropagation through a numerical ODE solver is
                         computationally expensive and numerically unstable, forcing prior work to sacrifice
-                        either <em>expressivity</em> (FQL) or <em>stability</em> (FBRAC).
+                        either <em>expressivity</em> (one-step distillation) or <em>stability</em> (backprop through time).
                     </p>
                     <p class="overview-lead">
                         <strong>Q-Flow</strong> escapes this dilemma by exploiting a key property of flow models:
