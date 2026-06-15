@@ -349,8 +349,8 @@ body {
 .rt thead th sup a:hover { color: var(--accent); }
 
 .rt-best {
-    background: #f0f4ff;
-    color: #1e3a6e;
+    background: #e8e8e8;
+    color: #1a1a1a;
 }
 
 .rt sub {
