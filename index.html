@@ -80,7 +80,7 @@
                         they can capture complex, multimodal action distributions that simpler policies miss.
                         But optimizing them for reward via backpropagation through a numerical ODE solver is
                         computationally expensive and numerically unstable, forcing prior work to sacrifice
-                        either <em>expressivity</em> (one-step distillation) or <em>stability</em> (backprop through time).
+                        either <em>expressivity</em> (FQL) or <em>stability</em> (FBRAC).
                     </p>
                     <p class="overview-lead">
                         <strong>Q-Flow</strong> escapes this dilemma by exploiting a key property of flow models:
@@ -125,15 +125,15 @@
                 <div class="dilemma-cards columns mt-2">
                     <div class="column">
                         <div class="dilemma-card box">
-                            <p class="dilemma-label">FBRAC</p>
-                            <p>Keeps full expressivity via BPTT, but becomes numerically unstable when behavior cloning constraints weaken.</p>
+                            <p class="dilemma-label">Backprop Through Time (BPTT)</p>
+                            <p>Keeps full expressivity by directly backpropagating through the ODE solver, but becomes numerically unstable when behavior cloning constraints weaken.</p>
                             <p class="dilemma-tag tag is-danger is-light">Expressive · Unstable</p>
                         </div>
                     </div>
                     <div class="column">
                         <div class="dilemma-card box">
-                            <p class="dilemma-label">FQL</p>
-                            <p>Achieves stability through one-step distillation into a student policy, but loses the representational power of flow models.</p>
+                            <p class="dilemma-label">One-Step Distillation</p>
+                            <p>Achieves stability by distilling the flow into a one-step student policy, but loses the representational power of flow models.</p>
                             <p class="dilemma-tag tag is-warning is-light">Stable · Limited</p>
                         </div>
                     </div>
