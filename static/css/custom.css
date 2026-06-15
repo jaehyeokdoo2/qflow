@@ -360,6 +360,17 @@ body {
     color: #92400e;
 }
 
+/* env-name: equivalent of LaTeX \texttt{} */
+code.env-name {
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 0.76rem;
+    color: #0e6b5e;
+    background: #f0faf8;
+    border-radius: 3px;
+    padding: 1px 4px;
+    white-space: nowrap;
+}
+
 .rt-note {
     font-family: 'Inter', sans-serif;
     font-size: 0.74rem;
