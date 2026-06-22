@@ -1,3 +1,37 @@
+// Dataset thumbnail hover → highlight matching rows in method cards
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.dataset-thumb').forEach(thumb => {
+        thumb.addEventListener('mouseenter', () => {
+            const ds = thumb.dataset.dataset;
+            document.querySelectorAll('.dilemma-fig-row').forEach(row => {
+                if (row.dataset.dataset === ds) {
+                    row.classList.add('row-highlight');
+                    row.classList.remove('row-dim');
+                } else {
+                    row.classList.add('row-dim');
+                    row.classList.remove('row-highlight');
+                }
+            });
+        });
+        thumb.addEventListener('mouseleave', () => {
+            document.querySelectorAll('.dilemma-fig-row').forEach(row => {
+                row.classList.remove('row-highlight', 'row-dim');
+            });
+        });
+    });
+});
+
+// Re-render MathJax when algo-toggle details are opened
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.algo-toggle').forEach(details => {
+        details.addEventListener('toggle', () => {
+            if (details.open && window.MathJax) {
+                MathJax.typesetPromise([details]);
+            }
+        });
+    });
+});
+
 // Collapsible results tables
 document.querySelectorAll('.expand-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -17,6 +51,7 @@ document.querySelectorAll('.expand-btn').forEach(btn => {
         icon.classList.toggle('fa-chevron-up', !isExpanded);
     });
 });
+
 
 // Smooth scroll for anchor links
 document.querySelectorAll('a[href^="#"]').forEach(anchor => {

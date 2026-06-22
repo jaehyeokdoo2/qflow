@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.0/css/bulma.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css">
-    <link rel="stylesheet" href="static/css/custom.css">
+    <link rel="stylesheet" href="static/css/custom.css?v=19">
     <script>
         MathJax = {
             tex: {
@@ -32,7 +32,9 @@
                             Q-Flow: Stable and Expressive Reinforcement Learning<br>with Flow-Based Policy
                         </h1>
 
-                        <div class="is-size-6 publication-authors">
+                        <div class="publication-venue mt-2"><a href="https://icml.cc/virtual/2026/poster/61595" target="_blank">ICML 2026</a></div>
+
+                        <div class="is-size-6 publication-authors mt-3">
                             <span class="author-block"><a href="https://www.linkedin.com/in/jaehyeok-doo-5768a5231/" target="_blank">JaeHyeok Doo</a><sup>1,*</sup>,</span>
                             <span class="author-block"><a href="https://www.linkedin.com/in/byeongguk-jeon-4b62b627a" target="_blank">Byeongguk Jeon</a><sup>1</sup>,</span>
                             <span class="author-block"><a href="https://seonghyeonye.github.io/" target="_blank">Seonghyeon Ye</a><sup>1</sup>,</span>
@@ -42,11 +44,9 @@
                         <div class="publication-affiliation mt-1">
                             <sup>1</sup> KAIST
                         </div>
-                        <div class="is-size-6 corresponding-note mt-1">
+                        <div class="corresponding-note mt-1">
                             <sup>*</sup> Corresponding author &nbsp;·&nbsp; <a href="mailto:jdoo2@kaist.ac.kr">jdoo2@kaist.ac.kr</a>
                         </div>
-
-                        <div class="is-size-6 publication-venue mt-2">ICML 2026</div>
 
                         <div class="publication-links mt-4">
                             <span class="link-block">
@@ -66,6 +66,10 @@
 
                     </div>
                 </div>
+
+                <video class="hero-teaser-video" autoplay loop muted playsinline>
+                    <source src="static/videos/qflow_teaser_final.mp4?v=2" type="video/mp4">
+                </video>
             </div>
         </div>
     </section>
@@ -76,37 +80,45 @@
             <div class="hero-body">
                 <h2 class="title is-3 overview-title">Overview</h2>
 
-                <div class="placeholder-media teaser-placeholder">
-                    <p>Video · Conceptual walkthrough of Q-Flow<br><small>Toy experiment: Swiss roll &amp; Two spirals — BPTT vs. One-step Distillation vs. Q-Flow</small></p>
-                </div>
-
                 <div class="overview-body mt-5">
-                    <ul class="overview-bullets">
-                        <li>
-                            <strong>Problem.</strong>
-                            Flow-based policies are expressive but hard to optimize for reward —
-                            backpropagating through a numerical ODE solver is unstable,
-                            and existing methods trade off either expressivity (one-step distillation) or stability (BPTT).
-                        </li>
-                        <li>
-                            <strong>Key insight.</strong>
-                            Flow dynamics are <em>deterministic</em>: every intermediate latent state $x_\tau$
-                            is uniquely coupled to a terminal action $x_1$, so the environmental value
-                            can be propagated back to each waypoint along the trajectory.
-                        </li>
-                        <li>
-                            <strong>Method.</strong>
-                            Q-Flow learns <em>intermediate value functions</em> over the flow trajectory
-                            and steers the velocity field with their gradients —
-                            achieving stable, expressive policy optimization without unrolling the ODE solver.
-                        </li>
-                        <li>
-                            <strong>Results.</strong>
-                            Q-Flow outperforms state-of-the-art baselines by <strong>+10.6 pp</strong> on OGBench,
-                            achieves <strong>+23%</strong> improvement during offline-to-online adaptation,
-                            and trains <strong>2× faster</strong> than BPTT-based methods.
-                        </li>
-                    </ul>
+                    <p class="overview-lead">
+
+                        
+                        There is growing interest in utilizing flow-based models as decision-making policies in reinforcement learning 
+                        due to their high expressive capacity.
+                        However, effectively leveraging this expressivity for value maximization remains 
+                        challenging, as naive gradient-based optimization requires <strong class="hl-key">backpropagating through numerical solvers</strong> and often leads to instability.
+                        Existing approaches typically address this issue by restricting the expressive capacity of flow-based policies, resulting in a
+                        <strong class="hl-key">trade-off between optimization stability and representational flexibility</strong>.
+                        <strong class="hl-flow">Q-Flow</strong> resolves this dilemma by learning
+                        <strong class="hl-flow">value functions over the <em>intermediate</em> states of the flow</strong>,
+                        enabling stable and expressive policy optimization without unrolling the solver.
+                    </p>
+
+                    <div class="insights mt-4">
+                        <div class="insights-title">✦ Key Insights</div>
+                        <div class="insight">
+                            <div class="insight-num">1</div>
+                            <div class="insight-body">
+                                <strong>Flow dynamics are deterministic, so value is invariant along the trajectory.</strong>
+                                Each intermediate noise integrates to the same action, so its value transfers back to the corresponding waypoint.
+                            </div>
+                        </div>
+                        <div class="insight">
+                            <div class="insight-num">2</div>
+                            <div class="insight-body">
+                                <strong>Intermediate value gradients steer the velocity field without BPTT.</strong>
+                                Using the intermediate value gradient as guidance updates the policy without unrolling the solver, removing the instability at its source.
+                            </div>
+                        </div>
+                        <div class="insight">
+                            <div class="insight-num">3</div>
+                            <div class="insight-body">
+                                <strong>Q-Flow achieves the best empirical performance.</strong>
+                                It consistently outperforms prior flow-based methods across diverse tasks.
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -118,32 +130,192 @@
     <section class="section" id="challenge">
         <div class="container is-max-desktop">
             <h2 class="title is-3">Challenge: The Expressivity–Stability Dilemma</h2>
+
             <div class="content">
                 <p>
                     Flow-based policies can model complex, multimodal action distributions that simpler policies cannot.
-                    But optimizing them for reward requires backpropagating gradients through a numerical ODE solver —
-                    an operation that is both expensive and unstable.
-                    Prior methods escape this by giving something up:
+                    But <strong>optimizing a flow policy for reward is difficult</strong>: each action is produced by
+                    integrating a velocity field through a numerical ODE solver, so improving it for return means
+                    differentiating through that entire generation process. Two prior strategies address this, but each
+                    comes with a fundamental limitation.
                 </p>
-                <div class="dilemma-cards columns mt-2">
-                    <div class="column">
-                        <div class="dilemma-card box">
+            </div>
+
+            <!-- 2D Experiments result panel -->
+            <div class="expt-panel mt-5">
+                <div class="expt-panel-head">2D Experiments<span class="expt-panel-sub">behavior under varying BC strength</span></div>
+                <div class="expt-scroll">
+                <div class="expt-scroll-inner">
+                <p class="content">
+                    To see the dilemma concretely, we visualize each method on two 2D synthetic tasks, sweeping the BC regularization strength:
+                </p>
+            <div class="figure-row mt-2 mb-2">
+                <figure class="paper-figure figure-half dataset-thumb" data-dataset="swissroll">
+                    <img src="static/images/figure1_dataset_swissroll.png" alt="Swiss roll dataset" />
+                    <figcaption>Swiss Roll</figcaption>
+                </figure>
+                <figure class="paper-figure figure-half dataset-thumb" data-dataset="twospirals">
+                    <img src="static/images/figure1_dataset_twospirals.png" alt="Two spirals dataset" />
+                    <figcaption>Two Spirals</figcaption>
+                </figure>
+            </div>
+            <p class="figure-caption-main mb-4">The two synthetic testbeds. Hover a task to highlight its row in the comparison below.</p>
+
+            <!-- Dilemma comparison cards -->
+            <div class="columns mt-4 is-align-items-flex-start">
+                <!-- BPTT -->
+                <div class="column is-one-third">
+                    <div class="dilemma-card">
+                        <div class="dilemma-header">
                             <p class="dilemma-label">Backprop Through Time (BPTT)</p>
-                            <p>Keeps full expressivity by directly backpropagating through the ODE solver, but becomes numerically unstable when behavior cloning constraints weaken.</p>
-                            <p class="dilemma-tag tag is-danger is-light">High Expressivity · Unstable Optimization</p>
+                            <div class="dilemma-tags">
+                                <span class="tag is-success is-light">Expressivity ✓</span>
+                                <span class="tag is-danger is-light">Stability ✗</span>
+                            </div>
                         </div>
+                        <div class="dilemma-figures mt-2">
+                            <div class="dilemma-fig-row" data-dataset="swissroll">
+                                <span class="fig-dataset-label">Swiss Roll</span>
+                                <img src="static/images/figure2_bptt_swissroll.png" alt="BPTT on Swiss roll" />
+                            </div>
+                            <div class="dilemma-fig-row" data-dataset="twospirals">
+                                <span class="fig-dataset-label">Two Spirals</span>
+                                <img src="static/images/figure2_bptt_twospirals.png" alt="BPTT on Two spirals" />
+                            </div>
+                        </div>
+                        <!-- <ul class="dilemma-summary mt-3">
+                            <li><span class="text-pos">High expressivity</span> — the full flow model captures complex, multi-modal distributions.</li>
+                            <li><span class="text-neg">Low optimization stability</span> — backpropagating through the ODE causes erratic collapse when BC regularization weakens.</li>
+                        </ul> -->
                     </div>
-                    <div class="column">
-                        <div class="dilemma-card box">
-                            <p class="dilemma-label">One-Step Distillation</p>
-                            <p>Achieves stability by distilling the flow into a one-step student policy, but loses the representational power of flow models.</p>
-                            <p class="dilemma-tag tag is-warning is-light">Low Expressivity · Stable Optimization</p>
+                </div>
+                <!-- One-Step Distillation -->
+                <div class="column is-one-third">
+                    <div class="dilemma-card">
+                        <div class="dilemma-header">
+                            <p class="dilemma-label">One-step Distillation</p>
+                            <div class="dilemma-tags">
+                                <span class="tag is-danger is-light">Expressivity ✗</span>
+                                <span class="tag is-success is-light">Stability ✓</span>
+                            </div>
                         </div>
+                        <div class="dilemma-figures mt-2">
+                            <div class="dilemma-fig-row" data-dataset="swissroll">
+                                <span class="fig-dataset-label">Swiss Roll</span>
+                                <img src="static/images/figure2_onestep_swissroll.png" alt="one-step on Swiss roll" />
+                            </div>
+                            <div class="dilemma-fig-row" data-dataset="twospirals">
+                                <span class="fig-dataset-label">Two Spirals</span>
+                                <img src="static/images/figure2_onestep_twospirals.png" alt="one-step on Two spirals" />
+                            </div>
+                        </div>
+                        <!-- <ul class="dilemma-summary mt-3">
+                            <li><span class="text-neg">Low expressivity</span> — the student network $g_\phi$ is restricted to simple distributions, failing to recover complex data geometry.</li>
+                            <li><span class="text-warn">Moderate optimization stability</span> — ODE unrolling is avoided, but representational limits remain.</li>
+                        </ul> -->
+                    </div>
+                </div>
+                <!-- Q-Flow -->
+                <div class="column is-one-third">
+                    <div class="dilemma-card">
+                        <div class="dilemma-header">
+                            <p class="dilemma-label" style="color: var(--accent);">Q-Flow (Ours)</p>
+                            <div class="dilemma-tags">
+                                <span class="tag is-success is-light">Expressivity ✓</span>
+                                <span class="tag is-success is-light">Stability ✓</span>
+                            </div>
+                        </div>
+                        <div class="dilemma-figures mt-2">
+                            <div class="dilemma-fig-row" data-dataset="swissroll">
+                                <span class="fig-dataset-label">Swiss Roll</span>
+                                <img src="static/images/figure3_qflow_swissroll.png" alt="Q-Flow on Swiss roll" />
+                            </div>
+                            <div class="dilemma-fig-row" data-dataset="twospirals">
+                                <span class="fig-dataset-label">Two Spirals</span>
+                                <img src="static/images/figure3_qflow_twospirals.png" alt="Q-Flow on Two spirals" />
+                            </div>
+                        </div>
+                        <!-- <ul class="dilemma-summary mt-3">
+                            <li><span class="text-pos">High expressivity</span> — the full flow model is preserved, capturing complex multi-modal distributions.</li>
+                            <li><span class="text-pos">High optimization stability</span> — intermediate value gradients guide the policy without ever unrolling the ODE solver.</li>
+                        </ul> -->
                     </div>
                 </div>
             </div>
-            <div class="placeholder-media">
-                <p>Figure · 2D synthetic tasks showing the dilemma<br><small>Swiss roll &amp; Two spirals — FBRAC collapses, FQL underfits, Q-Flow succeeds</small></p>
+            </div><!-- /expt-scroll-inner -->
+            </div><!-- /expt-scroll -->
+            </div>
+            <!-- /2D Experiments panel -->
+
+            <!-- BPTT -->
+            <div class="content mt-5">
+                <h3 class="title is-5">Backprop Through Time (BPTT)</h3>
+                <p>
+                    Maximize the critic directly on the action $a \sim \pi_\theta(\cdot \mid s)$ generated by the flow,
+                    backpropagating the $Q$-gradient through the entire ODE rollout, with a conditional
+                    flow-matching (behavioral-cloning) term anchoring the policy to the data:
+                </p>
+                <div class="equation-display">
+                    $$\mathcal{L}_\pi(\theta) = -\,\mathbb{E}_{\substack{s \sim \mathcal{D} \\ a \sim \pi_\theta(\cdot \mid s)}}\!\bigg[Q_\phi(s, a)\bigg] + \alpha\, \mathbb{E}_{\substack{\tau \sim \mathcal{U}(0,1) \\ x_0 \sim \mathcal{N}(0, I) \\ (s, a) \sim \mathcal{D}}}\!\bigg[\big\|v_\theta(x_\tau, \tau, s) - (a - x_0)\big\|^2\bigg]$$
+                </div>
+                <p class="is-size-7 has-text-grey mt-1">
+                    where $v_\theta$ is the flow's velocity field and $x_\tau = (1-\tau)\,x_0 + \tau\,a$.
+                </p>
+                <div class="bc-regime">
+                    <p class="bc-regime-head">In the 2D experiments above:</p>
+                    <div class="bc-row">
+                        <span class="bc-label">Strong BC</span>
+                        <span class="bc-outcome"><span class="text-pos">Expressive</span>, capturing the Swiss Roll and Two Spirals structure.</span>
+                    </div>
+                    <div class="bc-row">
+                        <span class="bc-label">Weak BC</span>
+                        <span class="bc-outcome"><span class="text-neg">Unstable</span>: the ODE solver gradients explode and the samples scatter into noise.</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- One-Step Distillation -->
+            <div class="content mt-5">
+                <h3 class="title is-5">One-step Distillation</h3>
+                <p>
+                    FQL<sup><a href="#ref-fql">2</a></sup> first fits a behavioral-cloning flow policy
+                    $\pi^{\text{BC}}_\theta$, whose velocity field $v_\theta$ is trained by flow matching:
+                </p>
+                <div class="equation-display">
+                    $$\mathcal{L}_{\mathrm{BC}}(\theta) = \mathbb{E}_{\substack{\tau \sim \mathcal{U}(0,1) \\ x_0 \sim \mathcal{N}(0, I) \\ (s, a) \sim \mathcal{D}}}\!\bigg[\big\|v_\theta(x_\tau, \tau, s) - (a - x_0)\big\|^2\bigg]$$
+                </div>
+                <p class="is-size-7 has-text-grey mt-1">
+                    with $x_\tau = (1-\tau)\,x_0 + \tau\,a$.
+                </p>
+                <p>
+                    It then distills this flow into a one-step policy $\pi^{\text{one-step}}_\omega$ that maps noise $x_0$
+                    directly to an action, trained to maximize the critic while staying close to the flow's output (coefficient $\alpha$):
+                </p>
+                <div class="equation-display">
+                    $$\mathcal{L}_\pi(\omega) = -\,\mathbb{E}_{\substack{s \sim \mathcal{D} \\ a^\omega \sim \pi^{\text{one-step}}_\omega(\cdot \mid s)}}\!\bigg[Q_\phi(s, a^\omega)\bigg] + \alpha\, \mathbb{E}_{\substack{s \sim \mathcal{D} \\ a^\omega \sim \pi^{\text{one-step}}_\omega(\cdot \mid s) \\ a^\theta \sim \pi^{\text{BC}}_\theta(\cdot \mid s)}}\!\bigg[\big\|a^\omega - a^\theta\big\|^2\bigg]$$
+                </div>
+                <div class="bc-regime">
+                    <p class="bc-regime-head">In the 2D experiments above:</p>
+                    <div class="bc-row">
+                        <span class="bc-label">Strong BC</span>
+                        <span class="bc-outcome"><span class="text-neg">Collapses</span> to a single path, losing the multimodal diversity.</span>
+                    </div>
+                    <div class="bc-row">
+                        <span class="bc-label">Weak BC</span>
+                        <span class="bc-outcome"><span class="text-pos">Stable</span>, but still collapses the modes and bridges gaps absent from the data.</span>
+                    </div>
+                </div>
+            </div>
+
+
+            <!-- Q-Flow resolution -->
+            <div class="content mt-4">
+                <p>
+                    <strong style="color: var(--accent);">Q-Flow</strong> escapes this trade-off. It keeps the full flow
+                    policy yet steers it with the gradient of a learned <em>intermediate</em>
+                    value rather than backpropagating through the solver, giving stable optimization at no cost to
+                    expressivity. <a href="#method">See the method below.</a>
+                </p>
             </div>
         </div>
     </section>
@@ -155,9 +327,15 @@
         <div class="container is-max-desktop">
             <h2 class="title is-3">Method</h2>
             <p class="method-intro content">
-                Q-Flow treats action generation as a <strong>hierarchical MDP</strong>: an outer environmental MDP
-                over states and actions, and an inner continuous-time flow MDP over the latent trajectory
-                $x_\tau \in [0,1]$ that generates each action $a = x_1$.
+                A flow policy turns noise $x_0 \sim \mathcal{N}(0, I)$ into an action $a = x_1$ by integrating a velocity
+                field along a latent trajectory $x_\tau$, $\tau \in [0, 1]$. Its dynamics are <strong>deterministic</strong>
+                ($\dot{x}_\tau = u_\tau$), so every intermediate state $x_\tau$ flows to exactly one terminal action:
+            </p>
+            <div class="equation-display">
+                $$x_1 \;:=\; \Psi^\pi_{1,\tau}(x_\tau,\, s),$$
+            </div>
+            <p class="method-intro content">
+                where $\Psi^\pi_{1,\tau}$ rolls policy $\pi$ forward from $x_\tau$ to $x_1$. This determinism underlies both components below.
             </p>
 
             <!-- Idea 1 -->
@@ -167,21 +345,20 @@
                 </h3>
                 <div class="content">
                     <p>
-                        Because the flow is <strong>deterministic</strong>, any intermediate latent state
-                        $x_\tau$ always integrates to the same terminal action $x_1$.
-                        The value at an intermediate state is therefore identical to the value at its terminal action:
+                        Since $x_\tau$ deterministically reaches $x_1$, Q-Flow assigns each intermediate state the value of the
+                        action it will produce:
                     </p>
                     <div class="equation-display">
                         $$V^\pi(s,\, x_\tau,\, \tau) \;:=\; Q\!\left(s,\; \Psi^\pi_{1,\tau}(x_\tau, s)\right)$$
                     </div>
+                    <ul>
+                        <li><strong>$V^\pi(s, x_\tau, \tau)$</strong>: Value of intermediate state $x_\tau$ at flow-time $\tau$.</li>
+                        <li><strong>$Q(s, \cdot)$</strong>: Standard outer critic, evaluated at the produced action.</li>
+                    </ul>
                     <p>
-                        Q-Flow learns this intermediate value function $V^\pi_\omega$ by regressing against
-                        a target outer critic $Q_{\bar\phi}$ evaluated at the rolled-out terminal state.
-                        This gives each latent waypoint a meaningful value estimate — without full ODE rollouts at training time.
+                        <span class="text-accent">Every waypoint gets a terminal-consistent value</span>, turning the flow
+                        trajectory into a value field the policy can follow.
                     </p>
-                </div>
-                <div class="placeholder-media">
-                    <p>Figure · Flow-consistent value<br><small>Deterministic path → value is invariant along the trajectory</small></p>
                 </div>
             </div>
 
@@ -192,23 +369,77 @@
                 </h3>
                 <div class="content">
                     <p>
-                        Instead of backpropagating through the solver, Q-Flow steers the velocity field
-                        directly using gradients of $V^\pi_\omega$ at each intermediate state.
-                        The policy is trained to match a value-guided target velocity:
+                        With a value at every $x_\tau$, Q-Flow steers the policy by the <strong>gradient</strong> of that
+                        value without backpropagating through the ODE solver. The <strong>target velocity</strong> combines behavior
+                        cloning (BC) anchor with intermediate value guidance:
                     </p>
                     <div class="equation-display">
-                        $$v_{\text{target}} \;=\; (x_1 - x_0) \;+\; \frac{1}{\lambda}\,\nabla_{x_\tau} V^\pi_\omega(s,\, x_\tau,\, \tau)$$
+                        $$v_{\text{target}}(x_1, x_0, \tau, s) \;=\; \underbrace{(x_1 - x_0)}_{\text{BC anchor}} \;+\; \frac{1}{\lambda}\,\underbrace{\nabla_{x_\tau} V^\pi_\omega(s, x_\tau, \tau)}_{\text{value guidance}}$$
                     </div>
+                    <ul>
+                        <li><strong>$(x_1 - x_0)$</strong>: BC anchor that keeps generation on the data support.</li>
+                        <li><strong>$\nabla_{x_\tau} V^\pi_\omega$</strong>: Value guidance toward latent actions that lead to high-value clean actions.</li>
+                        <li><strong>$\lambda > 0$</strong>: Guidance strength where smaller $\lambda$ favors the learned value and larger $\lambda$ favors the data.</li>
+                    </ul>
                     <p>
-                        The guidance coefficient $\lambda$ controls how far the policy deviates from
-                        the dataset distribution. Crucially, $V^\pi_\omega$ is trained on dataset paths —
-                        so its gradients are reliable without any ODE unrolling.
+                        Matching is local to each $\tau$, so <span class="text-accent">the policy improves without unrolling the
+                        ODE solver</span> while keeping the flow's full expressivity.
                     </p>
                 </div>
-                <div class="placeholder-media">
-                    <p>Figure · Intermediate value gradient matching<br><small>Velocity field steered by $\nabla V^\pi$ at each $\tau$</small></p>
+            </div>
+
+            <!-- Full Algorithm -->
+            <h3 class="title is-4 mt-6">Full Algorithm</h3>
+            <div class="content">
+                <p>
+                    Q-Flow jointly learns three networks: the outer critic $Q_\phi$, the inner
+                    value $V^\pi_\omega$, and the flow policy $v_\theta$.
+                </p>
+
+                <p><strong>Value learning.</strong> The outer critic backs up environment reward; the inner value distills it onto latent actions $x_\tau$.</p>
+                <div class="equation-display">
+                    $$\mathcal{L}_Q(\phi) \;=\; \mathbb{E}_{\substack{(s, a, r, s') \sim \mathcal{D} \\ a' \sim \pi_\theta}}\!\left[\big(Q_\phi(s, a) - r - \gamma\, Q_{\bar\phi}(s', a')\big)^2\right]$$
+                    $$\mathcal{L}_V(\omega) \;=\; \mathbb{E}_{\substack{\tau \sim \mathcal{U}(0,1) \\ x_0 \sim \mathcal{N}(0, I) \\ (s,\, x_1) \sim \mathcal{D}}}\!\left[\big(V^\pi_\omega(s, x_\tau, \tau) - Q_{\bar\phi}\big(s,\, \Psi^\pi_{1,\tau}(x_\tau, s)\big)\big)^2\right]$$
+                </div>
+
+                <p><strong>Policy learning.</strong> Match the flow velocity to the value-guided target at every step.</p>
+                <div class="equation-display">
+                    $$\mathcal{L}_\pi(\theta) \;=\; \mathbb{E}_{\substack{\tau \sim \mathcal{U}(0,1) \\ x_0 \sim \mathcal{N}(0, I) \\ (s,\, x_1) \sim \mathcal{D}}}\!\left[\big\|v_\theta(x_\tau, \tau, s) - \mathrm{sg}\big[\,v_{\text{target}}(x_1, x_0, \tau, s)\,\big]\big\|^2\right]$$
                 </div>
             </div>
+
+            <!-- Video: flow evolution -->
+            <h3 class="title is-4 mt-6">Flow Evolution</h3>
+            <p class="content">
+                We provide flow-evolution visualizations of Q-Flow on the 2D experiments. Each video pairs the two policies (BC and Q-Flow) column by column over the full flow trajectory
+                ($\tau = 0 \to 1$), from the same noise initialization.
+            </p>
+            <div class="columns mt-3">
+                <div class="column">
+                    <div class="video-card">
+                        <p class="video-card-title">Swiss Roll</p>
+                        <video class="flow-video" autoplay loop muted playsinline>
+                            <source src="static/videos/flow_evolution_swissroll.mp4?v=3" type="video/mp4" />
+                        </video>
+                    </div>
+                </div>
+                <div class="column">
+                    <div class="video-card">
+                        <p class="video-card-title">Two Spirals</p>
+                        <video class="flow-video" autoplay loop muted playsinline>
+                            <source src="static/videos/flow_evolution_twospirals.mp4?v=3" type="video/mp4" />
+                        </video>
+                    </div>
+                </div>
+            </div>
+            <p class="figure-caption-main">
+                <strong>(Top)</strong> Sample trajectories from noise to action:
+                BC flow (left) vs. Q-Flow (right).
+                <br>
+                <strong>(Bottom)</strong> BC velocity field (left) and the learned
+                intermediate value landscape $V^\pi_\omega$ with its gradient $\nabla_{x_\tau} V^\pi_\omega$ (right).
+            </p>
+
 
         </div>
     </section>
@@ -220,12 +451,12 @@
         <div class="container is-max-desktop">
             <h2 class="title is-3">Results</h2>
             <p class="content">
-                We evaluate on <a href="https://seohongpark.github.io/ogbench/" target="_blank">OGBench</a><sup><a href="#ref-ogbench">1</a></sup>
-                — a challenging suite spanning navigation, locomotion, manipulation, and puzzle tasks.
+                We evaluate on <a href="https://seohongpark.github.io/ogbench/" target="_blank">OGBench</a><sup><a href="#ref-ogbench">1</a></sup>,
+                a challenging suite spanning navigation, locomotion, manipulation, and puzzle tasks.
             </p>
 
             <!-- Standard Setting -->
-            <h3 class="title is-4 mt-4">Standard Setting</h3>
+            <h3 class="title is-4 mt-5">Standard Setting</h3>
             <div class="content">
                 <p>
                     Q-Flow achieves an average score of <strong>54.4</strong>, outperforming FQL (43.8)
@@ -425,21 +656,6 @@
                 </table>
             </div>
 
-            <!-- Offline-to-Online -->
-            <h3 class="title is-4 mt-6">Offline-to-Online Adaptation</h3>
-            <div class="content">
-                <p>
-                    Q-Flow requires no architectural changes for online fine-tuning.
-                    Across 5 OGBench<sup><a href="#ref-ogbench">1</a></sup> environments,
-                    it achieves a <strong>+23% average improvement</strong>
-                    over FQL<sup><a href="#ref-fql">2</a></sup> during online adaptation
-                    while preserving its offline performance.
-                </p>
-            </div>
-            <div class="placeholder-media">
-                <p>Figure · Offline-to-online learning curves<br><small>Q-Flow vs. FQL across 5 environments</small></p>
-            </div>
-
         </div>
     </section>
 
@@ -451,7 +667,7 @@
             <h2 class="title is-3">Citation</h2>
             <pre class="bibtex-block">@inproceedings{doo2026qflow,
   title     = {Q-Flow: Stable and Expressive Reinforcement Learning with Flow-Based Policy},
-  author    = {Doo, JaeHyeok and Jeon, Byeongguk and Ye, Seonghyeon and Lee, Kimin and Seo, Minjoon},
+  author    = {JaeHyeok Doo and Byeongguk Jeon and Seonghyeon Ye and Kimin Lee and Minjoon Seo},
   booktitle = {International Conference on Machine Learning},
   year      = {2026}
 }</pre>
@@ -531,6 +747,6 @@
         </div>
     </footer>
 
-    <script src="static/js/main.js"></script>
+    <script src="static/js/main.js?v=4"></script>
 </body>
 </html>
