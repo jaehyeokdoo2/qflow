@@ -1,10 +1,5 @@
 import os
 import platform
-import sys
-
-# Must be set before importing JAX to limit GPU memory pre-allocation.
-# JAX pre-allocates 75% of GPU memory by default; override here or via env var.
-os.environ.setdefault('XLA_PYTHON_CLIENT_MEM_FRACTION', '0.3')
 
 import json
 import random
@@ -20,12 +15,9 @@ from ml_collections import config_flags
 from agents import agents
 from envs.env_utils import make_env_and_datasets
 from utils.datasets import Dataset, ReplayBuffer
-from utils.evaluation import evaluate, evaluate_init_noise, flatten
+from utils.evaluation import evaluate, flatten
 from utils.flax_utils import restore_agent, save_agent
 from utils.log_utils import CsvLogger, get_exp_name, get_flag_dict, get_wandb_video, setup_wandb
-
-# Import QFlow config
-from qflow_config import get_qflow_params, extract_domain_from_env_name
 
 FLAGS = flags.FLAGS
 
@@ -48,11 +40,6 @@ flags.DEFINE_integer('eval_episodes', 50, 'Number of evaluation episodes.')
 flags.DEFINE_integer('video_episodes', 0, 'Number of video episodes for each task.')
 flags.DEFINE_integer('video_frame_skip', 3, 'Frame skip for videos.')
 
-# Init noise evaluation settings (for qflow)
-flags.DEFINE_boolean('eval_init_noise', True, 'Whether to evaluate init noise sampling for qflow.')
-flags.DEFINE_integer('init_noise_n_samples', 16, 'Number of noise candidates for init noise evaluation.')
-flags.DEFINE_list('init_noise_temperatures', ['0.1', '0.5', '1.0'], 'List of temperatures for init noise evaluation.')
-
 flags.DEFINE_float('p_aug', None, 'Probability of applying image augmentation.')
 flags.DEFINE_integer('frame_stack', None, 'Number of frames to stack.')
 flags.DEFINE_integer('balanced_sampling', 0, 'Whether to use balanced sampling for online fine-tuning.')
@@ -65,36 +52,7 @@ def main(_):
     agent_name = FLAGS.agent.agent_name
     env_name = FLAGS.env_name
     config = FLAGS.agent
-    
-    # ===== QFLOW-SPECIFIC: Get hyperparameters from config =====
-    if agent_name == 'qflow':
-        domain = extract_domain_from_env_name(env_name)
-        qflow_params = get_qflow_params(domain)
-        
-        # Check which parameters were explicitly set via command line arguments
-        # Look for --agent.key=value patterns in sys.argv
-        cmdline_overrides = set()
-        for arg in sys.argv:
-            if arg.startswith('--agent.'):
-                # Extract the key name (e.g., '--agent.alpha=0.1' -> 'alpha')
-                key_part = arg.split('=')[0]  # '--agent.alpha'
-                if '.' in key_part:
-                    key = key_part.split('.', 1)[1]  # 'alpha'
-                    cmdline_overrides.add(key)
-        
-        # Merge QFlow hyperparameters into config
-        # Only set values that were NOT explicitly overridden via command line
-        # This allows command-line flags (--agent.param=value) to override config file values
-        for key, value in qflow_params.items():
-            if key not in cmdline_overrides:
-                config[key] = value
-        
-        print(f"Using domain: {domain}")
-        print(f"QFlow hyperparameters from config file: {qflow_params}")
-        if cmdline_overrides:
-            print(f"Command-line overrides: {sorted(cmdline_overrides)}")
-    # ===== End QFLOW-SPECIFIC =====
-    
+
     if FLAGS.exp_name is not None:
         exp_name = FLAGS.exp_name
     else:
@@ -275,22 +233,6 @@ def main(_):
             if FLAGS.video_episodes > 0:
                 video = get_wandb_video(renders=renders)
                 eval_metrics['video'] = video
-
-            # Init noise evaluation for qflow agent
-            if FLAGS.eval_init_noise and config['agent_name'] == 'qflow':
-                temperature_list = [float(x) for x in FLAGS.init_noise_temperatures]
-                init_noise_stats = evaluate_init_noise(
-                    agent=agent,
-                    env=eval_env,
-                    n_samples=FLAGS.init_noise_n_samples,
-                    temperature_list=temperature_list,
-                    num_eval_episodes=FLAGS.eval_episodes,
-                )
-                # Log init noise metrics with prefix
-                for temperature, stats in init_noise_stats.items():
-                    temp_str = f'{temperature}'.replace('.', 'p')
-                    for k, v in stats.items():
-                        eval_metrics[f'eval_init_noise_t{temp_str}/{k}'] = v
 
             wandb.log(eval_metrics, step=i)
             eval_logger.log(eval_metrics, step=i)
