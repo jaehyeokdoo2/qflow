@@ -3,6 +3,14 @@
   <ul align="center" style="list-style: none;">
     <summary>
       <h1> Q-Flow: Stable and Expressive Reinforcement Learning with Flow-Based Policy </h1>
+      <h3>
+        <a href="https://www.linkedin.com/in/jaehyeok-doo-5768a5231/">JaeHyeok Doo</a><sup>1,*</sup>,
+        <a href="https://www.linkedin.com/in/byeongguk-jeon-4b62b627a">Byeongguk Jeon</a><sup>1</sup>,
+        <a href="https://seonghyeonye.github.io/">Seonghyeon Ye</a><sup>1</sup>,
+        <a href="https://sites.google.com/view/kiminlee">Kimin Lee</a><sup>1</sup>,
+        <a href="https://seominjoon.github.io/">Minjoon Seo</a><sup>1</sup>
+      </h3>
+      <p><sup>1</sup> KAIST &emsp; <sup>*</sup> Corresponding author &nbsp;·&nbsp; <a href="mailto:jdoo2@kaist.ac.kr">jdoo2@kaist.ac.kr</a></p>
       <br>
       <h2>[<a href="https://arxiv.org/abs/2605.13435">Paper</a>]
        &emsp;|&emsp; [<a href="https://jaehyeokdoo2.github.io/qflow">Website</a>]</h2>
