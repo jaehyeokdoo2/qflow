@@ -267,11 +267,11 @@
                     <p class="bc-regime-head">In the 2D experiments above:</p>
                     <div class="bc-row">
                         <span class="bc-label">Strong BC</span>
-                        <span class="bc-outcome"><span class="text-pos">Expressive</span>, capturing the Swiss Roll and Two Spirals structure.</span>
+                        <span class="bc-outcome"><span class="text-pos">Expressive</span>, capturing the complex data structure.</span>
                     </div>
                     <div class="bc-row">
                         <span class="bc-label">Weak BC</span>
-                        <span class="bc-outcome"><span class="text-neg">Unstable</span>: the ODE solver gradients explode and the samples scatter into noise.</span>
+                        <span class="bc-outcome"><span class="text-neg">Unstable</span>: backpropagating through the ODE solver destabilizes policy optimization and drifts off the data distribution.</span>
                     </div>
                 </div>
             </div>
@@ -300,11 +300,11 @@
                     <p class="bc-regime-head">In the 2D experiments above:</p>
                     <div class="bc-row">
                         <span class="bc-label">Strong BC</span>
-                        <span class="bc-outcome"><span class="text-neg">Collapses</span> to a single path, losing the multimodal diversity.</span>
+                        <span class="bc-outcome"><span class="text-neg">Limited Expressivity</span> due to one-step prediction.</span>
                     </div>
                     <div class="bc-row">
                         <span class="bc-label">Weak BC</span>
-                        <span class="bc-outcome"><span class="text-pos">Stable</span>, but still collapses the modes and bridges gaps absent from the data.</span>
+                        <span class="bc-outcome"> <span class="text-pos">Stability gained</span> by avoiding unrolling the solver multiple times.</span>
                     </div>
                 </div>
             </div>
@@ -560,7 +560,7 @@
             <div class="content">
                 <p>
                     Following the advanced evaluation protocol introduced in QAM<sup><a href="#ref-qam">3</a></sup>,
-                    we combine Q-Flow with three complementary offline RL techniques:
+                    we combine Q-Flow with three offline RL techniques:
                     <strong>ensemble critics</strong> (10 critics for more stable value estimates),
                     <strong>pessimistic value backup</strong> (lower confidence bound to penalize out-of-distribution actions),
                     and <strong>action chunking</strong> (predicting a sequence of future actions at each step).
