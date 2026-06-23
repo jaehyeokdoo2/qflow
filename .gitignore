@@ -18,6 +18,6 @@ ifql-reproduce
 fawac-reproduce
 rebuttal
 online_finetuning
-2d_exp/toy_experiment/
+2d_experiment/toy_experiment/
 .claude
 scripts

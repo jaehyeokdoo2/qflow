@@ -66,7 +66,7 @@ def plot_training_progress(flow_params, policy_params, critic_params, epoch, flo
 
 
 # ============================================================================
-# FQL ACTOR-CRITIC TRAINING (JAX)
+# FQL: Flow Q-Learning TRAINING (JAX)
 # ============================================================================
 # Components: FlowPolicy (teacher), OneStepPolicy, OuterCritic
 # Policy improvement: maximize Q(policy(z))
@@ -106,7 +106,7 @@ def train_fql(x_1_data, rewards_data, epochs=2000, lr=1e-3, alpha=1.0, flow_step
     policy_opt_state = policy_opt.init(policy_params)
     critic_opt_state = critic_opt.init(critic_params)
 
-    @partial(jax.jit, static_argnames=("flow_steps", "alpha", "batch_size", "use_target_network", "tau"))
+    @partial(jax.jit, static_argnames=("flow_steps", "batch_size", "use_target_network"))
     def step(state, key, flow_steps, alpha, batch_size, bc_only, use_target_network, tau):
         flow_params, policy_params, critic_params, target_critic_params, flow_opt_state, policy_opt_state, critic_opt_state = state
         key, k_idx, k_z, k_t, k_pol = jrandom.split(key, 5)
@@ -197,7 +197,7 @@ def train_fql(x_1_data, rewards_data, epochs=2000, lr=1e-3, alpha=1.0, flow_step
 
         # Run multiple steps per epoch to cover the dataset
         for step_idx in range(steps_per_epoch):
-            state, (key, logs) = step(state, key, flow_steps, alpha, batch_size, bc_only, use_target_network, tau)
+            state, (key, logs) = step(state, key, flow_steps, float(alpha), batch_size, bc_only, use_target_network, tau)
             flow_loss, critic_loss, distill_loss, q_val, policy_loss = logs
             epoch_flow_loss += float(flow_loss)
             epoch_critic_loss += float(critic_loss)
@@ -286,7 +286,7 @@ def train_fql(x_1_data, rewards_data, epochs=2000, lr=1e-3, alpha=1.0, flow_step
 
 
 # ============================================================================
-# QFlow (Q-guided Flow) - flow matching with inner time-conditioned critic
+# Q-Flow  - flow matching with inner time-conditioned critic
 # ============================================================================
 # Components: FlowPolicy, InnerCritic V(x, t), OuterCritic Q(a)
 # Policy improvement: steer the BC flow by the gradient of the inner critic.
@@ -375,7 +375,7 @@ def train_qflow(x_1_data, rewards_data, epochs=2000, lr=1e-3, alpha=1.0, flow_st
         t0 = jnp.zeros((z.shape[0], 1))
         return _integrate_flow_from(flow_params, z, t0, steps=steps)
 
-    @partial(jax.jit, static_argnames=("flow_steps", "alpha", "batch_size", "use_target_network", "tau"))
+    @partial(jax.jit, static_argnames=("flow_steps", "batch_size", "use_target_network"))
     def step(state, key, flow_steps, alpha, batch_size, bc_only, use_target_network, tau):
         flow_params, inner_params, outer_params, target_inner_params, target_outer_params, flow_opt_state, inner_opt_state, outer_opt_state = state
         key, k_idx, k_noise, k_t, k_pol1, k_pol2, _, _ = jrandom.split(key, 8)
@@ -489,7 +489,7 @@ def train_qflow(x_1_data, rewards_data, epochs=2000, lr=1e-3, alpha=1.0, flow_st
 
         # Run multiple steps per epoch to cover the dataset
         for step_idx in range(steps_per_epoch):
-            state, (key, logs) = step(state, key, flow_steps, alpha, batch_size, bc_only, use_target_network, tau)
+            state, (key, logs) = step(state, key, flow_steps, float(alpha), batch_size, bc_only, use_target_network, tau)
             bc_loss, distill_loss, q_val, flow_loss, outer_loss = logs
             epoch_bc_loss += float(bc_loss)
             epoch_distill_loss += float(distill_loss)
@@ -633,7 +633,7 @@ def train_fbrac(x_1_data, rewards_data, epochs=2000, lr=1e-3, alpha=1.0, flow_st
         fig, axes = None, None
         cnt = 0
 
-    @partial(jax.jit, static_argnames=("flow_steps", "alpha", "batch_size", "use_target_network", "tau"))
+    @partial(jax.jit, static_argnames=("flow_steps", "batch_size", "use_target_network"))
     def step(state, key, flow_steps, alpha, batch_size, bc_only, use_target_network, tau):
         flow_params, critic_params, target_critic_params, flow_opt_state, critic_opt_state = state
         key, k_idx, k_z, k_t, k_pol = jrandom.split(key, 5)
@@ -727,7 +727,7 @@ def train_fbrac(x_1_data, rewards_data, epochs=2000, lr=1e-3, alpha=1.0, flow_st
 
         # Run multiple steps per epoch to cover the dataset
         for step_idx in range(steps_per_epoch):
-            state, (key, logs) = step(state, key, flow_steps, alpha, batch_size, bc_only, use_target_network, tau)
+            state, (key, logs) = step(state, key, flow_steps, float(alpha), batch_size, bc_only, use_target_network, tau)
             bc_loss, critic_loss, q_val, flow_loss = logs
             epoch_bc_loss += float(bc_loss)
             epoch_critic_loss += float(critic_loss)
