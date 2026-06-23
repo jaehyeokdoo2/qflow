@@ -297,7 +297,7 @@ def train_qflow(x_1_data, rewards_data, epochs=2000, lr=1e-3, alpha=1.0, flow_st
                 batch_size=4096, bc_epochs=2000, num_evals=512,
                 save_dir='toy_experiment', dataset_type='swissroll'):
     """
-    QFlow: flow-based actor-critic with an inner (time-conditioned) critic.
+    QFlow: flow policy trained with an inner (time-conditioned) critic.
 
     1. Train outer critic Q(a) → R(a) on clean actions.
     2. Distill the inner critic V(x, t) from the outer critic along the flow.
@@ -579,7 +579,7 @@ def train_qflow(x_1_data, rewards_data, epochs=2000, lr=1e-3, alpha=1.0, flow_st
 
 
 # ============================================================================
-# FBRAC (Flow-Based Actor-Critic) - NO Inner Critic
+# FBRAC (Flow Behavior-Regularized Actor-Critic) - NO Inner Critic
 # ============================================================================
 # Like FQL but without one-step policy distillation.
 # Directly maximizes Q(flow(z)) through the full flow integration.
@@ -588,7 +588,7 @@ def train_fbrac(x_1_data, rewards_data, epochs=2000, lr=1e-3, alpha=1.0, flow_st
                 batch_size=4096, bc_epochs=2000, num_evals=512,
                 save_dir='toy_experiment', dataset_type='swissroll'):
     """
-    FBRAC: Flow-based actor-critic without inner critic.
+    FBRAC: Flow Behavior-Regularized Actor-Critic without inner critic.
 
     1. Train outer critic Q(a) → R(a) on clean actions.
     2. Train flow policy with BC loss + Q-maximization through full flow integration.

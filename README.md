@@ -24,7 +24,7 @@
 </p>
 
 ## Overview
-Q-Flow is a flow-matching RL algorithm that uses Q-value gradients to guide a flow-based policy toward high-value actions. This repository is the official implementation (ICML 2026). For the method, experiments, and results, please refer to the [paper](https://arxiv.org/abs/2605.13435) and the [project website](https://jaehyeokdoo2.github.io/qflow).
+Q-Flow is a flow-based RL algorithm that learns the value of intermediate noise and guide action sampling process toward high-value region. For the method, experiments, and results, please refer to the [paper](https://arxiv.org/abs/2605.13435) and the [project website](https://jaehyeokdoo2.github.io/qflow).
 
 This codebase is built on the [FQL framework](https://github.com/seohongpark/fql) and requires Python 3.9+ and JAX. The main dependencies are `jax >= 0.4.26`, `ogbench == 1.1.0`, and `gymnasium == 0.29.1`.
 
@@ -34,7 +34,7 @@ Installation: `pip install -r requirements.txt`
 
 ## 2D toy experiment
 
-The `2d_experiment/` directory contains a self-contained notebook that reproduces the 2D toy experiments comparing QFlow against FQL, FBRAC, and FBRAC-Inner on synthetic datasets (`moons`, `two_spirals`, `swissroll`, `eight_gaussians`).
+The `2d_experiment/` directory contains a self-contained notebook that reproduces the 2D toy experiments comparing QFlow against FQL and FBRAC on synthetic datasets (`moons`, `two_spirals`, `swissroll`, `eight_gaussians`).
 
 ```bash
 jupyter notebook 2d_experiment/toy_experiment_notebook.ipynb
@@ -55,6 +55,11 @@ python main.py --env_name=antmaze-large-play-v2 --agent=agents/qflow.py \
     --agent.alpha=0.2 --agent.q_agg=mean --agent.actor_loss_type=grad \
     --agent.use_time_embed=true --agent.time_embed_dim=16 --agent.discount=0.99
 ```
+
+## Main Experiments (advanced setting)
+
+<!-- PLACEHOLDER: finalize before release -->
+The advanced setting is built on the action-chunking framework from [QAM (Q-learning with Adjoint Matching)](https://colinqiyangli.github.io/qam). This repository contains the standard-setting code only. For the advanced setting, please refer to the QAM project page and use the corresponding QFlow agent script provided there: `TODO: add agent script path/link`.
 
 ## Acknowledgments
 

@@ -68,11 +68,10 @@ class QFlowAgent(flax.struct.PyTreeNode):
         x_0 = jax.random.normal(x_rng, (batch_size, action_dim))
         x_1 = batch['actions']
 
-        # --- [CHANGE 1] Uniform Continuous Time Sampling ---
+        # Uniform continuous time sampling
         t_continuous = jax.random.uniform(t_rng, (batch_size, 1), minval=0.0, maxval=1.0)
         x_t = (1.0 - t_continuous) * x_0 + t_continuous * x_1
 
-        # Use embedding if configured
         t_features = self._get_time_features(t_continuous)
         
         inner_qs = self.network.select('tc_critic')(
@@ -97,12 +96,12 @@ class QFlowAgent(flax.struct.PyTreeNode):
             dist_to_end = 1.0 - t_curr
             step_dt = jnp.clip(dist_to_end, 0.0, max_dt)
             
-            # 3. Query Policy for Velocity at current state
+            # Query policy for velocity
             vels = self.network.select('actor_bc_flow')(
                 batch['observations'], x_curr, t_curr, is_encoded=True
             )
             
-            # 4. Euler Update
+            # Euler update
             x_curr = x_curr + vels * step_dt
             t_curr = t_curr + step_dt
 
@@ -115,8 +114,6 @@ class QFlowAgent(flax.struct.PyTreeNode):
             if self.config['q_agg'] == 'mean'
             else target_q_outers.min(axis=0)
         )
-        # target_value = target_q_outers.min(axis=0)
-        
         target_value = jax.lax.stop_gradient(target_value)
         distillation_loss = jnp.mean((inner_q_t - target_value) ** 2)
         total_loss = outer_loss + distillation_loss
@@ -136,7 +133,6 @@ class QFlowAgent(flax.struct.PyTreeNode):
 
         x_0 = jax.random.normal(x_rng, (batch_size, action_dim))
         x_1 = batch['actions']
-        # Uniform time distribution
         t = jax.random.uniform(t_rng, (batch_size, 1), minval=0.0, maxval=1.0)
 
         x_t = (1.0 - t) * x_0 + t * x_1
@@ -144,34 +140,24 @@ class QFlowAgent(flax.struct.PyTreeNode):
 
         observations = batch['observations']
 
-        # 2. Actor Prediction (Velocity)
+        # Actor prediction (velocity)
         pred_vel = self.network.select('actor_bc_flow')(
             observations, x_t, t, is_encoded=True, params=grad_params
         )
         loss_type=self.config['actor_loss_type']
 
-        grad_scaling = False
-
         if loss_type == "grad":
-            # 1. Base Flow (Behavior Cloning Target / Data Flow)
-            v_base = u_t 
+            # Base flow (behavior-cloning target)
+            v_base = u_t
 
-            # 2. Value Gradient (Steering Term)
+            # Value gradient (steering term)
             t_features = self._get_time_features(t)
-            
-            if grad_scaling:
-                q_grad = jax.grad(lambda actions: self.network.select('tc_critic')(
-                    observations, actions, t_features
-                ).sum()) # Skip mean operation over ensemble dimension
-            else:
-                q_grad = jax.grad(lambda actions: self.network.select('tc_critic')(
-                observations, actions, t_features
-                ).mean(axis=0).sum())
+            q_grad = jax.grad(lambda actions: self.network.select('tc_critic')(
+                observations, actions, t_features).mean(axis=0).sum())
             grad_v = q_grad(x_t)
             grad_v = jax.lax.stop_gradient(grad_v)
 
-            # 3. Target Vector Matching
-            # v_target = v_{base} + beta * grad_v
+            # Target vector matching
             beta = 1.0 / (self.config['alpha'] + 1e-8)
             v_target = v_base + beta * grad_v
 
@@ -189,7 +175,6 @@ class QFlowAgent(flax.struct.PyTreeNode):
 
             # Push forward upto sampled t
             for i in range(self.config['flow_steps']):
-                # Compute step
                 cur_step = i / self.config['flow_steps']
                 step_t = jnp.full((batch_size, 1), cur_step)
                 remaining_t = t - step_t
@@ -209,7 +194,7 @@ class QFlowAgent(flax.struct.PyTreeNode):
             if clipped_sampling:
                 actor_actions = jnp.clip(actor_actions, -1, 1)
             
-            t_features = self._get_time_features(t) # Time embedding
+            t_features = self._get_time_features(t)
             qs = self.network.select('tc_critic')(observations, actor_actions, t_features)
             q = jnp.mean(qs, axis=0)
 
