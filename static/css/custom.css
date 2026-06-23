@@ -662,6 +662,11 @@ body {
     color: var(--text-color);
 }
 
+/* Bold values inherit their cell's color instead of Bulma's <strong> color. */
+.rt th strong, .rt td strong, .rt th b, .rt td b {
+    color: inherit;
+}
+
 .rt thead th {
     background: #f3f4f6;
     font-weight: 600;
