@@ -328,8 +328,7 @@
             <h2 class="title is-3">Method</h2>
             <p class="method-intro content">
                 A flow policy turns noise $x_0 \sim \mathcal{N}(0, I)$ into an action $a = x_1$ by integrating a velocity
-                field along a latent trajectory $x_\tau$, $\tau \in [0, 1]$. Its dynamics are <strong>deterministic</strong>
-                ($\dot{x}_\tau = u_\tau$), so every intermediate state $x_\tau$ flows to exactly one terminal action:
+                field along a trajectory $x_\tau$, $\tau \in [0, 1]$. Its dynamics are <strong>deterministic</strong>, so every intermediate state $x_\tau$ flows to exactly one terminal action:
             </p>
             <div class="equation-display">
                 $$x_1 \;:=\; \Psi^\pi_{1,\tau}(x_\tau,\, s),$$
@@ -356,7 +355,7 @@
                         <li><strong>$Q(s, \cdot)$</strong>: Standard outer critic, evaluated at the produced action.</li>
                     </ul>
                     <p>
-                        <span class="text-accent">Every waypoint gets a terminal-consistent value</span>, turning the flow
+                        <span class="text-accent">Every waypoint gets a flow-consistent value</span>, turning the flow
                         trajectory into a value field the policy can follow.
                     </p>
                 </div>
