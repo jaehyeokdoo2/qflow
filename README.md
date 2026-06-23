@@ -52,14 +52,13 @@ python main.py --env_name=antmaze-large-navigate-singletask-task1-v0 --agent=age
 
 # QFlow with explicit hyperparameters
 python main.py --env_name=antmaze-large-play-v2 --agent=agents/qflow.py \
-    --agent.alpha=0.2 --agent.q_agg=mean --agent.actor_loss_type=grad \
+    --agent.guidance_lambda=0.2 --agent.q_agg=mean --agent.actor_loss_type=grad \
     --agent.use_time_embed=true --agent.time_embed_dim=16 --agent.discount=0.99
 ```
 
 ## Main Experiments (advanced setting)
 
-<!-- PLACEHOLDER: finalize before release -->
-The advanced setting is built on the action-chunking framework from [QAM (Q-learning with Adjoint Matching)](https://colinqiyangli.github.io/qam). This repository contains the standard-setting code only. For the advanced setting, please refer to the QAM project page and use the corresponding QFlow agent script provided there: `TODO: add agent script path/link`.
+The advanced setting is built on the action-chunking framework from QAM (Q-learning with Adjoint Matching). This repository contains the standard-setting code only. For experiments in the advanced setting, we provide [agents/qflow_qamsetting.py](agents/qflow_qamsetting.py), a QFlow agent compatible with the [QAM codebase](https://github.com/ColinQiyangLi/qam); drop it into that repository's `agents/` directory to run it.
 
 ## Acknowledgments
 

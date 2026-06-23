@@ -158,7 +158,7 @@ class QFlowAgent(flax.struct.PyTreeNode):
             grad_v = jax.lax.stop_gradient(grad_v)
 
             # Target vector matching
-            beta = 1.0 / (self.config['alpha'] + 1e-8)
+            beta = 1.0 / (self.config['guidance_lambda'] + 1e-8)
             v_target = v_base + beta * grad_v
 
             total_loss = jnp.mean((pred_vel - jax.lax.stop_gradient(v_target)) ** 2)
@@ -203,7 +203,7 @@ class QFlowAgent(flax.struct.PyTreeNode):
                 lam = jax.lax.stop_gradient(1 / (jnp.abs(q).mean() + 1e-8))
                 q_loss = lam * q_loss
 
-            total_loss = self.config['alpha'] * bc_loss + q_loss
+            total_loss = self.config['guidance_lambda'] * bc_loss + q_loss
             info = {'total_loss': total_loss, 'bc_loss': bc_loss, 'q_loss': q_loss}
             return total_loss, info
         else:
@@ -371,14 +371,14 @@ def get_config():
             discount=0.99,  # Discount factor.
             tau=0.005,  # Target network update rate.
             q_agg='mean',  # Aggregation method for target Q values.
-            alpha=10.0,  # BC coefficient (need to be tuned for each environment).
+            guidance_lambda=1.0,  # Guidance coefficient (need to be tuned for each environment).
             flow_steps=10,  # Number of flow steps.
             normalize_q_loss=False,  # Whether to normalize the Q loss.
             reward_scale=1.0,  # Reward scale.
             encoder=ml_collections.config_dict.placeholder(str),  # Visual encoder name (None, 'impala_small', etc.).
             num_samples=32, # Number of action samples for rejection sampling
             use_time_embed=False, # Whether to use Fourier time embedding for TimeConditionedCritic
-            time_embed_dim=64, # Dimension of Fourier time embedding
+            time_embed_dim=16, # Dimension of Fourier time embedding
             num_ensembles=2,
             actor_loss_type="grad",
         )

@@ -59,13 +59,13 @@ def main(_):
         # Generate readable experiment name for qflow
         if agent_name == 'qflow':
             env_short = env_name.replace('-singletask-task', '-t').replace('-singletask', '').replace('-v0', '')
-            alpha = config.get('alpha', 'na')
+            guidance_lambda = config.get('guidance_lambda', 'na')
             q_agg = config.get('q_agg', 'na')
             time_embed_str = str(config.get('time_embed_dim')) if config.get('use_time_embed', False) else 'na'
             actor_loss = config.get('actor_loss_type', 'na')
             # Convert float values to string, handling integers cleanly
-            alpha_str = str(int(alpha)) if isinstance(alpha, (int, float)) and alpha == int(alpha) else str(alpha)
-            exp_name = f"qflow-{env_short}-a{alpha_str}-qagg{q_agg}-te{time_embed_str}-al{actor_loss}-sd{FLAGS.seed}"
+            lambda_str = str(int(guidance_lambda)) if isinstance(guidance_lambda, (int, float)) and guidance_lambda == int(guidance_lambda) else str(guidance_lambda)
+            exp_name = f"qflow-{env_short}-l{lambda_str}-qagg{q_agg}-te{time_embed_str}-al{actor_loss}-sd{FLAGS.seed}"
         else:
             exp_name = f"{agent_name}_{env_name}_sd{FLAGS.seed}"
     
