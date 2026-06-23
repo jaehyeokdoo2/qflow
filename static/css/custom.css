@@ -657,6 +657,11 @@ body {
     border-bottom: 1px solid #e5e7eb;
 }
 
+/* Default cell text color (zero-specificity so the colored-cell rules below still win). */
+.rt :where(th, td) {
+    color: var(--text-color);
+}
+
 .rt thead th {
     background: #f3f4f6;
     font-weight: 600;
